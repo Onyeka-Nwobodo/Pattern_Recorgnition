@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Word Scramble Arena</title>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <style>
 :root {
@@ -326,7 +327,7 @@ button{touch-action:manipulation}
     </div>
   </section>
 
-  <div class="footer">Tip: when hosted online, students can scan the host QR code to open the game with the room code already filled in. <span style="opacity:.65">Version 4.0 — official relay client</span></div>
+  <div class="footer">Tip: when hosted online, students can scan the host QR code to open the game with the room code already filled in. <span style="opacity:.65">Version 5.0 — MQTT classroom rooms</span></div>
 </div>
 
 <script>
@@ -399,103 +400,115 @@ button{touch-action:manipulation}
   }
 
   function relayChannel(code) {
-    return 'word-scramble-arena-v4-' + code.toLowerCase();
+    return 'word-scramble-arena-v5-' + code.toLowerCase();
   }
 
-  // Official itty-sockets client (from the service documentation).
-  function connectRelay(channel, options={}) {
-    let socket, closed, queue=[], listeners={}, api;
-    const open = () => {
-      if (socket) return api;
-      socket = new WebSocket(
-        (/^wss?:/.test(channel) ? channel : "wss://itty.ws/c/" + channel) +
-        "?" + new URLSearchParams(options)
-      );
-      socket.onmessage = (event) => {
-        let packet;
-        try { packet = JSON.parse(event.data); } catch (e) { return; }
-        const message = packet?.message;
-        const merged = {
-          ...((message && typeof message === 'object' && !Array.isArray(message)) ? message : {}),
-          ...packet
-        };
-        const eventNames = [
-          merged.type,
-          packet.type ? null : "message",
-          "*"
-        ].filter(Boolean);
-        eventNames.forEach(name => (listeners[name] || []).forEach(fn => fn(merged)));
-      };
-      socket.onopen = () => {
-        queue.splice(0).forEach(payload => socket.send(payload));
-        (listeners.open || []).forEach(fn => fn());
-        if (closed) socket?.close();
-      };
-      socket.onerror = (event) => (listeners.error || []).forEach(fn => fn(event));
-      socket.onclose = () => {
-        socket = null;
-        (listeners.close || []).forEach(fn => fn());
-      };
-      return api;
-    };
-
-    api = {
-      open,
-      send(message) {
-        const payload = JSON.stringify(message);
-        if (socket && socket.readyState === WebSocket.OPEN) socket.send(payload);
-        else {
-          queue.push(payload);
-          open();
-        }
-        return api;
-      },
-      on(type, fn) {
-        (listeners[type] ||= []).push(fn);
-        open();
-        return api;
-      },
-      close() {
-        closed = true;
-        if (socket && socket.readyState === WebSocket.OPEN) socket.close();
-        return api;
-      }
-    };
-    return api;
-  }
+  const MQTT_BROKER = 'wss://broker.hivemq.com:8884/mqtt';
 
   function openRelay(code, alias, onReady, onPacket) {
     relayClosedIntentionally = false;
     relayReady = false;
 
-    try { if (relayWs) relayWs.close(); } catch (e) {}
+    if (typeof mqtt === 'undefined' || typeof mqtt.connect !== 'function') {
+      setNet('Messaging library failed to load');
+      if (role === 'player') {
+        ui.joinMessage.textContent = 'The multiplayer library did not load. Reload this page and try again.';
+        ui.joinRoom.disabled = false;
+      }
+      return;
+    }
 
-    relayWs = connectRelay(relayChannel(code), {
-      as: alias || 'Player',
-      announce: 'true'
-    })
-      .on('open', () => {
+    try { if (relayWs && relayWs.close) relayWs.close(); } catch (e) {}
+
+    const topic = 'openai-classroom/' + relayChannel(code);
+    const clientId = 'wsa_' + role + '_' + localClientId.replace(/[^a-zA-Z0-9]/g,'').slice(-18) +
+      '_' + Math.random().toString(36).slice(2,8);
+
+    const client = mqtt.connect(MQTT_BROKER, {
+      clientId,
+      clean: true,
+      reconnectPeriod: 1200,
+      connectTimeout: 10000,
+      keepalive: 30,
+      resubscribe: true
+    });
+
+    let subscribed = false;
+
+    relayWs = {
+      send(message) {
+        if (!subscribed || !client.connected) return false;
+        try {
+          client.publish(topic, JSON.stringify(message), {qos:1, retain:false});
+          return true;
+        } catch (e) {
+          return false;
+        }
+      },
+      close() {
+        relayClosedIntentionally = true;
+        subscribed = false;
+        relayReady = false;
+        try { client.end(true); } catch (e) {}
+      }
+    };
+
+    client.on('connect', () => {
+      setNet(role === 'host' ? 'Opening room…' : 'Joining room…');
+      client.subscribe(topic, {qos:1}, (err) => {
+        if (err) {
+          relayReady = false;
+          setNet('Room connection failed');
+          if (role === 'player') {
+            ui.joinMessage.textContent = 'Could not connect to the classroom room service. Try again.';
+            ui.joinRoom.disabled = false;
+          }
+          return;
+        }
+        subscribed = true;
         relayReady = true;
-        setNet(role === 'host' ? 'Room online' : 'Connected to relay', true);
+        setNet(role === 'host' ? 'Room online' : 'Room service connected', true);
         onReady();
-      })
-      .on('message', (message) => {
-        onPacket(message, message || {});
-      })
-      .on('error', () => {
-        relayReady = false;
-        setNet('Connection issue');
-      })
-      .on('close', () => {
-        relayReady = false;
-        if (!relayClosedIntentionally) setNet('Disconnected');
       });
+    });
+
+    client.on('message', (incomingTopic, payload) => {
+      if (incomingTopic !== topic) return;
+      let message;
+      try { message = JSON.parse(payload.toString()); } catch (e) { return; }
+      if (!message || typeof message !== 'object') return;
+      onPacket(message, message);
+    });
+
+    client.on('reconnect', () => {
+      relayReady = false;
+      subscribed = false;
+      setNet('Reconnecting…');
+    });
+
+    client.on('offline', () => {
+      relayReady = false;
+      subscribed = false;
+      setNet('Offline');
+    });
+
+    client.on('error', () => {
+      relayReady = false;
+      setNet('Connection issue');
+    });
+
+    client.on('close', () => {
+      relayReady = false;
+      subscribed = false;
+      if (!relayClosedIntentionally) setNet('Reconnecting…');
+    });
   }
 
   function sendRelay(msg) {
     try {
-      if (relayWs) relayWs.send(msg);
+      if (relayWs && relayWs.send) return relayWs.send(msg);
     } catch (e) {}
+    return false;
   }
 
   function broadcast(msg) {
@@ -591,6 +604,7 @@ button{touch-action:manipulation}
       const url = new URL(window.location.href);
       url.search = '';
       url.hash = '';
+      url.searchParams.set('v', '50');
       url.searchParams.set('room', code);
       return url.toString();
     } catch (e) {
@@ -647,8 +661,8 @@ button{touch-action:manipulation}
   ui.createRoom.addEventListener('click', createHostRoom);
 
   function createHostRoom() {
-    if (!('WebSocket' in window)) {
-      alert('This browser does not support the connection needed for multiplayer.');
+    if (typeof mqtt === 'undefined' || typeof mqtt.connect !== 'function') {
+      alert('The multiplayer library did not load. Reload the page and try again.');
       return;
     }
     roomCode = randomCode();
@@ -909,8 +923,8 @@ button{touch-action:manipulation}
   ui.joinRoom.addEventListener('click', joinRoom);
 
   function joinRoom() {
-    if (!('WebSocket' in window)) {
-      ui.joinMessage.textContent='This browser does not support the connection needed for multiplayer.';
+    if (typeof mqtt === 'undefined' || typeof mqtt.connect !== 'function') {
+      ui.joinMessage.textContent='The multiplayer library did not load. Reload the page and try again.';
       return;
     }
 
@@ -1113,7 +1127,7 @@ button{touch-action:manipulation}
     clearInterval(stateRequestTimer);
     clearInterval(joinRetryTimer);
     relayClosedIntentionally = true;
-    try { if (relayWs) relayWs.close(); } catch(e) {}
+    try { if (relayWs && relayWs.close) relayWs.close(); } catch(e) {}
   });
 })();
 </script>
