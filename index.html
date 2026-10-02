@@ -328,7 +328,7 @@ button{touch-action:manipulation}
     </div>
   </section>
 
-  <div class="footer">Tip: when hosted online, students can scan the host QR code to open the game with the room code already filled in. <span style="opacity:.65">Version 6.0 — Firebase rooms</span></div>
+  <div class="footer">Tip: when hosted online, students can scan the host QR code to open the game with the room code already filled in. <span style="opacity:.65">Version 6.1 — Firebase join fix</span></div>
 </div>
 
 <script>
@@ -398,6 +398,16 @@ button{touch-action:manipulation}
     let out = '';
     for (let i=0;i<6;i++) out += chars[Math.floor(Math.random()*chars.length)];
     return out;
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, ch => ({
+      '&':'&amp;',
+      '<':'&lt;',
+      '>':'&gt;',
+      '"':'&quot;',
+      "'":'&#039;'
+    }[ch]));
   }
 
   function relayChannel(code) {
@@ -662,7 +672,7 @@ button{touch-action:manipulation}
       const url = new URL(window.location.href);
       url.search = '';
       url.hash = '';
-      url.searchParams.set('v', '60');
+      url.searchParams.set('v', '61');
       url.searchParams.set('room', code);
       return url.toString();
     } catch (e) {
