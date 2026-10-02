@@ -11,7 +11,7 @@ host.on('pageerror', err => console.log('HOST PAGEERROR:', err.message));
 player.on('console', msg => console.log('PLAYER CONSOLE:', msg.type(), msg.text()));
 player.on('pageerror', err => console.log('PLAYER PAGEERROR:', err.message));
 
-const base = 'http://127.0.0.1:8000/?v=50';
+const base = 'http://127.0.0.1:8000/?v=61';
 
 try {
   await host.goto(base, {waitUntil:'domcontentloaded'});
