@@ -328,7 +328,7 @@ button{touch-action:manipulation}
     </div>
   </section>
 
-  <div class="footer">Tip: when hosted online, students can scan the host QR code to open the game with the room code already filled in. <span style="opacity:.65">Version 6.1 — Firebase join fix</span></div>
+  <div class="footer">Tip: when hosted online, students can scan the host QR code to open the game with the room code already filled in. <span style="opacity:.65">Version 6.2 — Firebase game start fix</span></div>
 </div>
 
 <script>
@@ -408,6 +408,24 @@ button{touch-action:manipulation}
       '"':'&quot;',
       "'":'&#039;'
     }[ch]));
+  }
+
+  function shuffle(arr) {
+    const a = [...arr];
+    for (let i=a.length-1;i>0;i--) {
+      const j = Math.floor(Math.random()*(i+1));
+      [a[i],a[j]]=[a[j],a[i]];
+    }
+    return a;
+  }
+
+  function scrambleWord(word) {
+    let s = word;
+    for (let tries=0; tries<12 && s === word; tries++) {
+      s = shuffle(word.split('')).join('');
+    }
+    if (s === word && word.length > 2) s = word.slice(1) + word[0];
+    return s.toUpperCase();
   }
 
   function relayChannel(code) {
@@ -672,7 +690,7 @@ button{touch-action:manipulation}
       const url = new URL(window.location.href);
       url.search = '';
       url.hash = '';
-      url.searchParams.set('v', '61');
+      url.searchParams.set('v', '62');
       url.searchParams.set('room', code);
       return url.toString();
     } catch (e) {
