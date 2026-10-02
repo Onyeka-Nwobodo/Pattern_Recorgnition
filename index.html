@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Word Scramble Arena</title>
-<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-database-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <style>
 :root {
@@ -327,7 +328,7 @@ button{touch-action:manipulation}
     </div>
   </section>
 
-  <div class="footer">Tip: when hosted online, students can scan the host QR code to open the game with the room code already filled in. <span style="opacity:.65">Version 5.1 — tested MQTT rooms</span></div>
+  <div class="footer">Tip: when hosted online, students can scan the host QR code to open the game with the room code already filled in. <span style="opacity:.65">Version 6.0 — Firebase rooms</span></div>
 </div>
 
 <script>
@@ -400,46 +401,147 @@ button{touch-action:manipulation}
   }
 
   function relayChannel(code) {
-    return 'word-scramble-arena-v5-' + code.toLowerCase();
+    return 'word-scramble-arena-v6-' + code.toLowerCase();
   }
 
-  const MQTT_BROKER = 'wss://broker.emqx.io:8084/mqtt';
+  const firebaseConfig = {
+    apiKey: "AIzaSyBNyBgX8YIsErNCvNMmrSSqvYjjG7B6yZM",
+    authDomain: "onyeka-caa22.firebaseapp.com",
+    databaseURL: "https://onyeka-caa22-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "onyeka-caa22",
+    storageBucket: "onyeka-caa22.firebasestorage.app",
+    messagingSenderId: "185498616556",
+    appId: "1:185498616556:web:490e1287b1d1a7733e5bc9",
+    measurementId: "G-2CKP6XJKN4"
+  };
+
+  let firebaseDb = null;
+  let activeRoomRef = null;
+  let activeMessagesRef = null;
+  let activeMessageQuery = null;
+  let activeMessageHandler = null;
+
+  function ensureFirebase() {
+    if (firebaseDb) return firebaseDb;
+    if (typeof firebase === 'undefined' || !firebase.initializeApp) {
+      throw new Error('Firebase library did not load');
+    }
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+    firebaseDb = firebase.database();
+    return firebaseDb;
+  }
+
+  function detachFirebaseRoom() {
+    try {
+      if (activeMessageQuery && activeMessageHandler) {
+        activeMessageQuery.off('child_added', activeMessageHandler);
+      }
+    } catch (e) {}
+    activeMessageQuery = null;
+    activeMessageHandler = null;
+    activeMessagesRef = null;
+    activeRoomRef = null;
+    relayReady = false;
+  }
 
   function openRelay(code, alias, onReady, onPacket) {
     relayClosedIntentionally = false;
-    relayReady = false;
+    detachFirebaseRoom();
 
-    if (typeof mqtt === 'undefined' || typeof mqtt.connect !== 'function') {
-      setNet('Messaging library failed to load');
+    let db;
+    try {
+      db = ensureFirebase();
+    } catch (err) {
+      setNet('Firebase failed to load');
       if (role === 'player') {
-        ui.joinMessage.textContent = 'The multiplayer library did not load. Reload this page and try again.';
+        ui.joinMessage.textContent = 'Firebase did not load. Reload the page and try again.';
         ui.joinRoom.disabled = false;
+      } else {
+        alert('Firebase did not load. Reload the page and try again.');
       }
       return;
     }
 
-    try { if (relayWs && relayWs.close) relayWs.close(); } catch (e) {}
+    const channel = relayChannel(code);
+    const roomRef = db.ref('rooms/' + channel);
+    const metaRef = roomRef.child('meta');
+    const messagesRef = roomRef.child('messages');
+    const listenFrom = Date.now() - 3000;
 
-    const topic = 'openai-classroom/' + relayChannel(code);
-    const clientId = 'wsa_' + role + '_' + localClientId.replace(/[^a-zA-Z0-9]/g,'').slice(-18) +
-      '_' + Math.random().toString(36).slice(2,8);
+    activeRoomRef = roomRef;
+    activeMessagesRef = messagesRef;
 
-    const client = mqtt.connect(MQTT_BROKER, {
-      clientId,
-      clean: true,
-      reconnectPeriod: 1200,
-      connectTimeout: 10000,
-      keepalive: 30,
-      resubscribe: true
-    });
+    const attachListener = () => {
+      activeMessageQuery = messagesRef.orderByChild('ts').startAt(listenFrom);
+      activeMessageHandler = (snap) => {
+        const message = snap.val();
+        if (!message || typeof message !== 'object') return;
+        onPacket(message, message);
+      };
+      activeMessageQuery.on('child_added', activeMessageHandler, (err) => {
+        console.error('Firebase listener error', err);
+        relayReady = false;
+        setNet('Firebase permission error');
+      });
+      relayReady = true;
+      setNet(role === 'host' ? 'Room online' : 'Room found', true);
+      onReady();
+    };
 
-    let subscribed = false;
+    if (role === 'host') {
+      setNet('Creating Firebase room…');
+      roomRef.set({
+        meta: {
+          hostOnline: true,
+          roomCode: code,
+          createdAt: firebase.database.ServerValue.TIMESTAMP
+        }
+      }).then(() => {
+        try {
+          metaRef.onDisconnect().update({
+            hostOnline: false,
+            disconnectedAt: firebase.database.ServerValue.TIMESTAMP
+          });
+        } catch (e) {}
+        attachListener();
+      }).catch((err) => {
+        console.error('Firebase room create failed', err);
+        relayReady = false;
+        setNet('Room creation failed');
+        ui.createRoom.disabled = false;
+        alert('Could not create the Firebase room. Check that Realtime Database is in test mode, then try again.');
+      });
+    } else {
+      setNet('Finding Firebase room…');
+      metaRef.once('value').then((snap) => {
+        const meta = snap.val();
+        if (!meta || meta.hostOnline !== true) {
+          relayReady = false;
+          setNet('Host not found');
+          ui.joinMessage.textContent = 'Room could not be found. Make sure the host still has the room open and check the code.';
+          ui.joinRoom.disabled = false;
+          return;
+        }
+        attachListener();
+      }).catch((err) => {
+        console.error('Firebase room lookup failed', err);
+        relayReady = false;
+        setNet('Database access failed');
+        ui.joinMessage.textContent = 'Could not access the room database. Check Firebase Realtime Database rules.';
+        ui.joinRoom.disabled = false;
+      });
+    }
 
     relayWs = {
       send(message) {
-        if (!subscribed || !client.connected) return false;
+        if (!activeMessagesRef) return false;
         try {
-          client.publish(topic, JSON.stringify(message), {qos:1, retain:false});
+          activeMessagesRef.push({
+            ...message,
+            senderId: localClientId,
+            senderRole: role,
+            ts: firebase.database.ServerValue.TIMESTAMP
+          });
           return true;
         } catch (e) {
           return false;
@@ -447,61 +549,17 @@ button{touch-action:manipulation}
       },
       close() {
         relayClosedIntentionally = true;
-        subscribed = false;
-        relayReady = false;
-        try { client.end(true); } catch (e) {}
+        if (role === 'host' && activeRoomRef) {
+          try {
+            activeRoomRef.child('meta').update({
+              hostOnline: false,
+              closedAt: firebase.database.ServerValue.TIMESTAMP
+            });
+          } catch (e) {}
+        }
+        detachFirebaseRoom();
       }
     };
-
-    client.on('connect', () => {
-      setNet(role === 'host' ? 'Opening room…' : 'Joining room…');
-      client.subscribe(topic, {qos:1}, (err) => {
-        if (err) {
-          relayReady = false;
-          setNet('Room connection failed');
-          if (role === 'player') {
-            ui.joinMessage.textContent = 'Could not connect to the classroom room service. Try again.';
-            ui.joinRoom.disabled = false;
-          }
-          return;
-        }
-        subscribed = true;
-        relayReady = true;
-        setNet(role === 'host' ? 'Room online' : 'Room service connected', true);
-        onReady();
-      });
-    });
-
-    client.on('message', (incomingTopic, payload) => {
-      if (incomingTopic !== topic) return;
-      let message;
-      try { message = JSON.parse(payload.toString()); } catch (e) { return; }
-      if (!message || typeof message !== 'object') return;
-      onPacket(message, message);
-    });
-
-    client.on('reconnect', () => {
-      relayReady = false;
-      subscribed = false;
-      setNet('Reconnecting…');
-    });
-
-    client.on('offline', () => {
-      relayReady = false;
-      subscribed = false;
-      setNet('Offline');
-    });
-
-    client.on('error', () => {
-      relayReady = false;
-      setNet('Connection issue');
-    });
-
-    client.on('close', () => {
-      relayReady = false;
-      subscribed = false;
-      if (!relayClosedIntentionally) setNet('Reconnecting…');
-    });
   }
 
   function sendRelay(msg) {
@@ -604,7 +662,7 @@ button{touch-action:manipulation}
       const url = new URL(window.location.href);
       url.search = '';
       url.hash = '';
-      url.searchParams.set('v', '51');
+      url.searchParams.set('v', '60');
       url.searchParams.set('room', code);
       return url.toString();
     } catch (e) {
@@ -661,8 +719,8 @@ button{touch-action:manipulation}
   ui.createRoom.addEventListener('click', createHostRoom);
 
   function createHostRoom() {
-    if (typeof mqtt === 'undefined' || typeof mqtt.connect !== 'function') {
-      alert('The multiplayer library did not load. Reload the page and try again.');
+    if (typeof firebase === 'undefined' || !firebase.initializeApp) {
+      alert('Firebase did not load. Reload the page and try again.');
       return;
     }
     roomCode = randomCode();
@@ -923,8 +981,8 @@ button{touch-action:manipulation}
   ui.joinRoom.addEventListener('click', joinRoom);
 
   function joinRoom() {
-    if (typeof mqtt === 'undefined' || typeof mqtt.connect !== 'function') {
-      ui.joinMessage.textContent='The multiplayer library did not load. Reload the page and try again.';
+    if (typeof firebase === 'undefined' || !firebase.initializeApp) {
+      ui.joinMessage.textContent='Firebase did not load. Reload the page and try again.';
       return;
     }
 
