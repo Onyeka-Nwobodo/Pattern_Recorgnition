@@ -237,11 +237,10 @@ button{touch-action:manipulation}
             </div>
           </div>
 
-          <div class="notice">You can start the game immediately. Players may join before the game starts or during a round. Multiplayer now uses a server-relayed room connection, so phones do not need a direct connection to the host device.</div>
+          <div id="lobbyStatus" class="notice">Waiting for at least one student to join. When a student is fully connected, their name will appear under Players as <b>Ready ✓</b> and the Start game button will activate.</div>
           <div class="actions">
-            <button id="startGame" class="btn primary" type="button" aria-disabled="false" onclick="window.startWordGameNow && window.startWordGameNow()">Start game now</button>
-            <button class="btn good" type="button" onclick="window.startWordGameNow && window.startWordGameNow()">Start first word</button>
-          </div>
+            <button id="startGame" class="btn primary" type="button" disabled aria-disabled="true">Start game</button>
+                      </div>
         </div>
 
         <div id="hostRound" class="hidden">
@@ -275,7 +274,7 @@ button{touch-action:manipulation}
 
       <aside class="panel scoreboard">
         <h3>Players</h3>
-        <div id="hostPlayers" class="players"><p class="help">Waiting for players…</p></div>
+        <div id="hostPlayers" class="players"><p class="help">No students joined yet.</p></div>
       </aside>
     </div>
   </section>
@@ -327,7 +326,7 @@ button{touch-action:manipulation}
     </div>
   </section>
 
-  <div class="footer">Tip: when hosted online, students can scan the host QR code to open the game with the room code already filled in. <span style="opacity:.65">Version 2.2 — direct start button</span></div>
+  <div class="footer">Tip: when hosted online, students can scan the host QR code to open the game with the room code already filled in. <span style="opacity:.65">Version 3.0 — confirmed student join</span></div>
 </div>
 
 <script>
@@ -344,7 +343,7 @@ button{touch-action:manipulation}
     hostChoice:$('hostChoice'), joinChoice:$('joinChoice'), createRoom:$('createRoom'),
     joinRoom:$('joinRoom'), joinMessage:$('joinMessage'), playerName:$('playerName'),
     roomInput:$('roomInput'), roundCount:$('roundCount'), roundSeconds:$('roundSeconds'),
-    roomCodeDisplay:$('roomCodeDisplay'), qrCode:$('qrCode'), joinLinkBox:$('joinLinkBox'), copyJoinLink:$('copyJoinLink'), qrWarning:$('qrWarning'), startGame:$('startGame'), hostPlayers:$('hostPlayers'),
+    roomCodeDisplay:$('roomCodeDisplay'), qrCode:$('qrCode'), joinLinkBox:$('joinLinkBox'), copyJoinLink:$('copyJoinLink'), qrWarning:$('qrWarning'), startGame:$('startGame'), hostPlayers:$('hostPlayers'), lobbyStatus:$('lobbyStatus'),
     hostLobby:$('hostLobby'), hostRound:$('hostRound'), hostFinished:$('hostFinished'),
     hostRoundLabel:$('hostRoundLabel'), hostTimer:$('hostTimer'), hostTiles:$('hostTiles'),
     hostPattern:$('hostPattern'), hostClue:$('hostClue'), hostFeedback:$('hostFeedback'),
@@ -366,6 +365,7 @@ button{touch-action:manipulation}
   let relayQueue = [];
   let joinTimeout = null;
   let stateRequestTimer = null;
+  let joinRetryTimer = null;
   const players = new Map();
   const uidToPlayer = new Map();
   let role = null;
@@ -464,26 +464,54 @@ button{touch-action:manipulation}
   function scoreRows() {
     return [...players.values()]
       .sort((a,b) => b.score - a.score || a.joinOrder - b.joinOrder)
-      .map((p,i) => ({rank:i+1,name:p.name,score:p.score,solved:p.solvedCurrent}));
+      .map((p,i) => ({
+        rank:i+1,
+        name:p.name,
+        score:p.score,
+        solved:p.solvedCurrent,
+        ready:!!p.ready
+      }));
+  }
+
+  function confirmedPlayerCount() {
+    return [...players.values()].filter(p => p.ready).length;
+  }
+
+  function updateLobbyControls() {
+    const ready = confirmedPlayerCount();
+    const enabled = ready >= 1;
+    ui.startGame.disabled = !enabled;
+    ui.startGame.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+    ui.startGame.textContent = enabled ? 'Start game' : 'Waiting for student…';
+    if (ui.lobbyStatus) {
+      ui.lobbyStatus.innerHTML = enabled
+        ? `${ready} student${ready === 1 ? '' : 's'} ready. You can start the game now.`
+        : 'Waiting for at least one student to join. Their name will appear under Players as <b>Ready ✓</b>.';
+    }
   }
 
   function renderScoreTable(target, compact=false) {
     const rows = scoreRows();
     if (!rows.length) {
-      target.innerHTML = '<p class="help">Waiting for players…</p>';
+      target.innerHTML = '<p class="help">No students joined yet.</p>';
       return;
     }
     if (compact) {
       target.innerHTML = '<table><thead><tr><th>#</th><th>Player</th><th>Score</th></tr></thead><tbody>' +
-        rows.map(r => `<tr><td class="rank">${r.rank}</td><td>${escapeHtml(r.name)}</td><td class="score">${r.score}</td></tr>`).join('') +
+        rows.map(r => `<tr><td class="rank">${r.rank}</td><td>${escapeHtml(r.name)}${r.ready ? ' ✓' : ''}</td><td class="score">${r.score}</td></tr>`).join('') +
         '</tbody></table>';
     } else {
-      target.innerHTML = rows.map(r => `
-        <div class="player-card">
-          <div class="avatar">${escapeHtml(r.name.slice(0,1).toUpperCase())}</div>
-          <div><b>${escapeHtml(r.name)}</b><br><small>${r.solved ? 'Solved this word ✓' : 'Thinking…'}</small></div>
-          <div class="score">${r.score}</div>
-        </div>`).join('');
+      target.innerHTML = rows.map(r => {
+        const status = game
+          ? (r.solved ? 'Solved this word ✓' : 'Playing…')
+          : (r.ready ? 'Ready ✓' : 'Connecting…');
+        return `
+          <div class="player-card">
+            <div class="avatar">${escapeHtml(r.name.slice(0,1).toUpperCase())}</div>
+            <div><b>${escapeHtml(r.name)}</b><br><small>${status}</small></div>
+            <div class="score">${r.score}</div>
+          </div>`;
+      }).join('');
     }
   }
 
@@ -594,18 +622,12 @@ button{touch-action:manipulation}
       renderJoinQr(roomCode);
       setNet('Room online', true);
       ui.createRoom.disabled = false;
-      forceStartEnabled();
+      updateLobbyControls();
       sendRelay({type:'hostOnline', room:roomCode});
     }, handleHostRelayPacket);
   }
 
   function handleHostRelayPacket(data, packet) {
-    if (packet.type === 'leave' && packet.uid) {
-      const playerId = uidToPlayer.get(packet.uid);
-      if (playerId) removeRelayPlayer(playerId, packet.uid);
-      return;
-    }
-
     if (!data || typeof data !== 'object') return;
 
     if (data.type === 'joinRequest') {
@@ -630,24 +652,33 @@ button{touch-action:manipulation}
       const current = players.get(playerId);
       if (current) {
         current.name = name;
-        current.uid = packet.uid || current.uid;
       } else {
         players.set(playerId, {
           name,
           score:0,
           joinOrder:players.size+1,
           solvedCurrent:false,
-          uid:packet.uid || ''
+          ready:false
         });
       }
-      if (packet.uid) uidToPlayer.set(packet.uid, playerId);
 
-      forceStartEnabled();
-      ui.startGame.textContent = 'Start game now';
+      renderScoreTable(ui.hostPlayers, false);
+      updateLobbyControls();
       sendRelay({type:'joined', target:playerId, name});
       if (game) sendRelay({type:'state', target:playerId, state:publicState()});
+      return;
+    }
+
+    if (data.type === 'joinConfirmed') {
+      const playerId = String(data.clientId || '');
+      const player = players.get(playerId);
+      if (!player) return;
+      player.ready = true;
       renderScoreTable(ui.hostPlayers, false);
-      syncAll();
+      updateLobbyControls();
+      sendRelay({type:'readyConfirmed', target:playerId, name:player.name});
+      if (game) sendRelay({type:'state', target:playerId, state:publicState()});
+      return;
     }
 
     if (data.type === 'requestState') {
@@ -657,6 +688,7 @@ button{touch-action:manipulation}
       } else if (playerId) {
         sendRelay({type:'waiting', target:playerId});
       }
+      return;
     }
 
     if (data.type === 'guess') {
@@ -665,40 +697,22 @@ button{touch-action:manipulation}
     }
   }
 
-  function removeRelayPlayer(playerId, uid) {
+  function removeRelayPlayer(playerId) {
     players.delete(playerId);
-    if (uid) uidToPlayer.delete(uid);
-    forceStartEnabled();
     renderScoreTable(ui.hostPlayers, false);
+    updateLobbyControls();
     if (game) syncAll();
   }
 
-  function forceStartEnabled(){
-    ui.startGame.disabled=false;
-    ui.startGame.removeAttribute('disabled');
-    ui.startGame.setAttribute('aria-disabled','false');
-    ui.startGame.style.pointerEvents='auto';
-  }
-  forceStartEnabled();
-
-  let startLock = false;
-  window.startWordGameNow = function() {
-    forceStartEnabled();
-    if (startLock) return;
-    startLock = true;
-    try {
-      startHostGame();
-    } catch (err) {
-      startLock = false;
-      ui.hostFeedback.textContent = 'Could not start the game. Reload this page and create a new room.';
-      ui.hostFeedback.className = 'feedback bad';
-      console.error(err);
-    }
-  };
+  updateLobbyControls();
 
   ui.startGame.addEventListener('click', (event) => {
     event.preventDefault();
-    window.startWordGameNow();
+    if (confirmedPlayerCount() < 1) {
+      updateLobbyControls();
+      return;
+    }
+    startHostGame();
   });
 
   function startHostGame() {
@@ -714,7 +728,6 @@ button{touch-action:manipulation}
     ui.hostFinished.classList.add('hidden');
     ui.hostRound.classList.remove('hidden');
     beginRound();
-    startLock = false;
   }
 
   function beginRound() {
@@ -882,7 +895,10 @@ button{touch-action:manipulation}
     openRelay(roomCode, localPlayerName, () => {
       setNet('Finding host…', true);
       ui.joinMessage.textContent='Finding host…';
-      sendRelay({type:'joinRequest', clientId:localClientId, name:localPlayerName});
+      const sendJoin = () => sendRelay({type:'joinRequest', clientId:localClientId, name:localPlayerName});
+      sendJoin();
+      clearInterval(joinRetryTimer);
+      joinRetryTimer = setInterval(sendJoin, 1200);
 
       clearTimeout(joinTimeout);
       joinTimeout = setTimeout(() => {
@@ -912,11 +928,23 @@ button{touch-action:manipulation}
     }
     if (data.type === 'joined') {
       clearTimeout(joinTimeout);
+      clearInterval(joinRetryTimer);
+      setNet('Confirming…', true);
+      ui.joinMessage.textContent='Host found. Confirming your seat…';
+      sendRelay({type:'joinConfirmed', clientId:localClientId});
+      joinRetryTimer = setInterval(() => {
+        if (relayReady) sendRelay({type:'joinConfirmed', clientId:localClientId});
+      }, 1200);
+    }
+
+    if (data.type === 'readyConfirmed') {
+      clearInterval(joinRetryTimer);
+      clearTimeout(joinTimeout);
       setNet('Connected', true);
-      ui.joinMessage.textContent='Connected!';
+      ui.joinMessage.textContent='Connected and ready!';
       ui.landing.classList.add('hidden');
       ui.playerApp.classList.remove('hidden');
-      ui.playerWelcome.textContent = `Ready, ${data.name}!`;
+      ui.playerWelcome.textContent = `Ready, ${data.name || localPlayerName}! Wait for the host to start.`;
       ui.joinRoom.disabled=false;
 
       clearInterval(stateRequestTimer);
@@ -1042,6 +1070,7 @@ button{touch-action:manipulation}
     stopClientTimer();
     clearTimeout(joinTimeout);
     clearInterval(stateRequestTimer);
+    clearInterval(joinRetryTimer);
     relayClosedIntentionally = true;
     clearTimeout(relayReconnectTimer);
     try { if (relayWs) relayWs.close(); } catch(e) {}
