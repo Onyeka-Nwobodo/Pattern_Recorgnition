@@ -1,0 +1,950 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Word Scramble Arena</title>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<style>
+:root {
+  --bg1:#07111f;
+  --bg2:#0b1f35;
+  --panel:rgba(13,26,44,.82);
+  --panel2:rgba(18,38,63,.88);
+  --line:rgba(255,255,255,.14);
+  --text:#f7fbff;
+  --muted:#a8bdd3;
+  --accent:#48d5ff;
+  --accent2:#9d75ff;
+  --good:#4ee6a8;
+  --bad:#ff6b8a;
+  --gold:#ffd15c;
+}
+*{box-sizing:border-box}
+html{color-scheme:dark}
+body{
+  margin:0;
+  min-height:100vh;
+  font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  color:var(--text);
+  background:
+    radial-gradient(circle at 15% 0%,rgba(72,213,255,.16),transparent 32rem),
+    radial-gradient(circle at 90% 10%,rgba(157,117,255,.18),transparent 30rem),
+    linear-gradient(160deg,var(--bg1),var(--bg2));
+}
+button,input,select{font:inherit}
+button{touch-action:manipulation}
+.shell{width:min(1080px,94vw);margin:auto;padding:24px 0 56px}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:22px}
+.brand{font-weight:900;letter-spacing:.02em;font-size:clamp(1.35rem,4vw,2rem)}
+.brand span{color:var(--accent)}
+.status-pill{
+  display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);
+  background:rgba(255,255,255,.05);border-radius:999px;padding:8px 12px;color:var(--muted);font-size:.9rem
+}
+.dot{width:9px;height:9px;border-radius:50%;background:#7a8ca0;box-shadow:0 0 0 4px rgba(122,140,160,.12)}
+.dot.live{background:var(--good);box-shadow:0 0 18px var(--good)}
+.grid{display:grid;grid-template-columns:1.2fr .8fr;gap:18px}
+.panel{
+  background:linear-gradient(180deg,rgba(21,42,68,.9),rgba(11,25,43,.9));
+  border:1px solid var(--line);border-radius:24px;padding:clamp(18px,4vw,30px);
+  box-shadow:0 24px 65px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.05)
+}
+.panel h1,.panel h2,.panel h3{margin-top:0}
+.hero{padding:38px 0 18px}
+.hero h1{font-size:clamp(2.5rem,8vw,5.3rem);line-height:.92;letter-spacing:-.055em;margin:0;max-width:820px}
+.hero p{color:var(--muted);max-width:700px;font-size:1.05rem;line-height:1.6}
+.actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:24px}
+.btn{
+  min-height:48px;padding:12px 18px;border-radius:14px;border:1px solid var(--line);cursor:pointer;
+  font-weight:800;color:var(--text);background:rgba(255,255,255,.06);transition:.15s ease
+}
+.btn:hover{transform:translateY(-1px);border-color:rgba(72,213,255,.7)}
+.btn:active{transform:translateY(0)}
+.btn.primary{background:linear-gradient(135deg,var(--accent),#72a9ff 55%,var(--accent2));color:#06101c;border:0}
+.btn.good{background:rgba(78,230,168,.13);border-color:rgba(78,230,168,.4)}
+.btn.warn{background:rgba(255,209,92,.12);border-color:rgba(255,209,92,.35)}
+.btn.danger{background:rgba(255,107,138,.12);border-color:rgba(255,107,138,.35)}
+.btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.field label{display:block;color:var(--muted);font-size:.88rem;margin:0 0 7px}
+.field input,.field select{
+  width:100%;min-height:48px;border:1px solid var(--line);border-radius:13px;background:#081625;color:var(--text);
+  padding:12px 14px;outline:none
+}
+.field input:focus,.field select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(72,213,255,.12)}
+.hidden{display:none!important}
+.room-code{
+  font-weight:950;letter-spacing:.16em;font-size:clamp(2rem,8vw,4.2rem);
+  background:linear-gradient(135deg,#fff,var(--accent));-webkit-background-clip:text;background-clip:text;color:transparent
+}
+.help{color:var(--muted);line-height:1.55;font-size:.92rem}
+.players{display:grid;gap:10px}
+.player-card{
+  display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;padding:12px 14px;border:1px solid var(--line);
+  background:rgba(255,255,255,.04);border-radius:14px
+}
+.avatar{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;font-weight:900;background:rgba(72,213,255,.13);border:1px solid rgba(72,213,255,.3)}
+.player-card small{color:var(--muted)}
+.score{font-weight:950;color:var(--gold)}
+.scramble-stage{perspective:900px;padding:12px 0 4px}
+.tiles{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;min-height:86px;align-items:center}
+.tile{
+  width:clamp(45px,8vw,68px);height:clamp(56px,10vw,80px);display:grid;place-items:center;border-radius:16px;
+  font-size:clamp(1.55rem,5vw,2.6rem);font-weight:950;
+  background:linear-gradient(145deg,#183b5c,#0c223a);
+  border:1px solid rgba(255,255,255,.17);
+  box-shadow:0 11px 0 #061221,0 18px 28px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.08);
+  transform:rotateX(5deg) rotateY(-4deg);
+  text-shadow:0 2px 0 #000
+}
+.tile.revealed{background:linear-gradient(145deg,#244f49,#11362f);box-shadow:0 11px 0 #071d1a,0 18px 28px rgba(0,0,0,.25)}
+.meta{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;color:var(--muted);margin-bottom:12px}
+.timer{font-weight:900;color:var(--gold)}
+.clue-box{
+  margin:18px 0;padding:15px 16px;border-left:4px solid var(--accent);background:rgba(72,213,255,.08);
+  border-radius:12px;color:#dff8ff;line-height:1.5
+}
+.answer-pattern{text-align:center;letter-spacing:.18em;font-size:clamp(1.25rem,5vw,2rem);font-weight:900;margin:12px 0 4px;word-break:break-word}
+.feedback{min-height:28px;text-align:center;font-weight:800;margin-top:12px}
+.feedback.good{color:var(--good)} .feedback.bad{color:var(--bad)} .feedback.gold{color:var(--gold)}
+.scoreboard table{width:100%;border-collapse:collapse}
+.scoreboard th,.scoreboard td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:left}
+.scoreboard th{color:var(--muted);font-size:.82rem}
+.scoreboard tr:last-child td{border-bottom:0}
+.rank{font-weight:900;color:var(--muted)}
+.host-controls{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+.tag{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted);font-size:.84rem}
+.big-center{text-align:center;padding:10px 0 4px}
+.big-center h2{font-size:clamp(1.6rem,5vw,2.8rem);margin-bottom:8px}
+.big-center p{color:var(--muted)}
+.notice{border:1px solid rgba(255,209,92,.28);background:rgba(255,209,92,.08);border-radius:14px;padding:12px 14px;color:#ffeaa7;font-size:.9rem;line-height:1.5}
+.round-answer{font-size:clamp(2rem,8vw,4rem);font-weight:950;letter-spacing:.04em;color:var(--good);text-align:center}
+.footer{color:var(--muted);font-size:.82rem;text-align:center;margin-top:18px}
+
+.qr-wrap{
+  display:grid;grid-template-columns:auto 1fr;gap:18px;align-items:center;margin-top:18px;
+  padding:16px;border:1px solid var(--line);background:rgba(255,255,255,.035);border-radius:18px
+}
+#qrCode{
+  width:196px;min-width:196px;min-height:196px;display:grid;place-items:center;
+  background:#fff;border-radius:14px;padding:10px;overflow:hidden
+}
+#qrCode img,#qrCode canvas{max-width:100%;height:auto!important}
+.join-link-box{
+  width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:#081625;
+  color:var(--text);font-size:.86rem;word-break:break-all
+}
+.qr-note{color:var(--muted);line-height:1.5;font-size:.9rem;margin:.55rem 0 0}
+.qr-warning{
+  border:1px solid rgba(255,209,92,.35);background:rgba(255,209,92,.08);
+  border-radius:13px;padding:11px 12px;color:#ffeaa7;font-size:.9rem;line-height:1.5;margin-top:10px
+}
+@media(max-width:620px){.qr-wrap{grid-template-columns:1fr}#qrCode{margin:auto}}
+
+@media(max-width:820px){.grid{grid-template-columns:1fr}.hero{padding-top:16px}}
+@media(max-width:560px){.form-row{grid-template-columns:1fr}.panel{border-radius:18px}.tile{width:42px;height:52px;border-radius:12px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="topbar">
+    <div class="brand">WORD <span>SCRAMBLE</span> ARENA</div>
+    <div class="status-pill"><span id="netDot" class="dot"></span><span id="netText">Not connected</span></div>
+  </div>
+
+  <section id="landing">
+    <div class="hero">
+      <h1>Race to rebuild the word.</h1>
+      <p>One device hosts the round. Up to four players join with a room code, solve the same scramble, use shared clues when needed, and compete for the highest score.</p>
+      <div class="actions">
+        <button id="hostChoice" class="btn primary" type="button">Host a game</button>
+        <button id="joinChoice" class="btn" type="button">Join as player</button>
+      </div>
+    </div>
+
+    <div id="hostSetup" class="panel hidden">
+      <h2>Create a room</h2>
+      <div class="form-row">
+        <div class="field">
+          <label for="roundCount">Words in this game</label>
+          <select id="roundCount">
+            <option value="10">10 words</option>
+            <option value="20" selected>20 words</option>
+            <option value="30">30 words</option>
+            <option value="40">40 words</option>
+            <option value="50">50 words</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="roundSeconds">Seconds per word</label>
+          <select id="roundSeconds">
+            <option value="45">45 seconds</option>
+            <option value="60" selected>60 seconds</option>
+            <option value="75">75 seconds</option>
+            <option value="90">90 seconds</option>
+          </select>
+        </div>
+      </div>
+      <div class="actions">
+        <button id="createRoom" class="btn primary" type="button">Create room</button>
+        <button class="btn backLanding" type="button">Back</button>
+      </div>
+      <p class="help">The host should stay open for the whole game. Players can use the same HTML file on their phones.</p>
+    </div>
+
+    <div id="joinSetup" class="panel hidden">
+      <h2>Join a room</h2>
+      <div class="form-row">
+        <div class="field">
+          <label for="playerName">Your name</label>
+          <input id="playerName" maxlength="18" autocomplete="off" placeholder="e.g. Mia">
+        </div>
+        <div class="field">
+          <label for="roomInput">Room code</label>
+          <input id="roomInput" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="ABC123">
+        </div>
+      </div>
+      <div class="actions">
+        <button id="joinRoom" class="btn primary" type="button">Join game</button>
+        <button class="btn backLanding" type="button">Back</button>
+      </div>
+      <div id="joinMessage" class="help"></div>
+    </div>
+  </section>
+
+  <section id="hostApp" class="hidden">
+    <div class="grid">
+      <div class="panel">
+        <div id="hostLobby">
+          <span class="tag">HOST CONTROL</span>
+          <h2 style="margin-top:14px">Room code</h2>
+          <div id="roomCodeDisplay" class="room-code">------</div>
+          <p class="help">Players can scan the QR code below. The room code will be filled in automatically; they only need to enter their name.</p>
+
+          <div class="qr-wrap">
+            <div id="qrCode" aria-label="QR code for joining this room"></div>
+            <div>
+              <h3 style="margin-bottom:8px">Scan to join</h3>
+              <div id="joinLinkBox" class="join-link-box">The join link will appear here.</div>
+              <div class="actions" style="margin-top:10px">
+                <button id="copyJoinLink" class="btn" type="button">Copy join link</button>
+              </div>
+              <p class="qr-note">This QR works when the game file is hosted online using an <b>https://</b> web address.</p>
+              <div id="qrWarning" class="qr-warning hidden"></div>
+            </div>
+          </div>
+
+          <div class="notice">Multiplayer uses a direct browser-to-browser connection. All devices need internet access for the connection service; classroom devices on the same Wi‑Fi usually work best.</div>
+          <div class="actions">
+            <button id="startGame" class="btn primary" type="button" disabled>Start game</button>
+          </div>
+        </div>
+
+        <div id="hostRound" class="hidden">
+          <div class="meta">
+            <span id="hostRoundLabel">Word 1 / 20</span>
+            <span class="timer" id="hostTimer">60s</span>
+          </div>
+          <div class="scramble-stage"><div id="hostTiles" class="tiles"></div></div>
+          <div id="hostPattern" class="answer-pattern"></div>
+          <div id="hostClue" class="clue-box hidden"></div>
+          <div id="hostFeedback" class="feedback"></div>
+          <div class="host-controls">
+            <button id="showClue" class="btn warn" type="button">Show clue</button>
+            <button id="revealLetter" class="btn warn" type="button">Reveal a letter</button>
+            <button id="endRound" class="btn danger" type="button">End round</button>
+            <button id="nextRound" class="btn primary hidden" type="button">Next word</button>
+          </div>
+          <div id="answerReveal" class="hidden">
+            <p class="help" style="text-align:center;margin-top:20px">Correct word</p>
+            <div id="hostAnswer" class="round-answer"></div>
+          </div>
+        </div>
+
+        <div id="hostFinished" class="big-center hidden">
+          <span class="tag">GAME COMPLETE</span>
+          <h2>Final scoreboard</h2>
+          <p>Great race. The highest total score is shown on the right.</p>
+          <button id="hostRestart" class="btn primary" type="button">New game</button>
+        </div>
+      </div>
+
+      <aside class="panel scoreboard">
+        <h3>Players</h3>
+        <div id="hostPlayers" class="players"><p class="help">Waiting for players…</p></div>
+      </aside>
+    </div>
+  </section>
+
+  <section id="playerApp" class="hidden">
+    <div class="grid">
+      <div class="panel">
+        <div id="playerWaiting" class="big-center">
+          <span class="tag">YOU'RE IN</span>
+          <h2 id="playerWelcome">Ready!</h2>
+          <p>Wait for the host to start the game.</p>
+        </div>
+
+        <div id="playerRound" class="hidden">
+          <div class="meta">
+            <span id="playerRoundLabel">Word 1 / 20</span>
+            <span class="timer" id="playerTimer">60s</span>
+          </div>
+          <div class="scramble-stage"><div id="playerTiles" class="tiles"></div></div>
+          <div id="playerPattern" class="answer-pattern"></div>
+          <div id="playerClue" class="clue-box hidden"></div>
+          <form id="guessForm">
+            <div class="field">
+              <label for="guessInput">Your answer</label>
+              <input id="guessInput" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Type the complete word">
+            </div>
+            <div class="actions">
+              <button id="submitGuess" class="btn primary" type="submit">Submit answer</button>
+            </div>
+          </form>
+          <div id="playerFeedback" class="feedback" aria-live="polite"></div>
+          <div id="playerAnswerReveal" class="hidden">
+            <p class="help" style="text-align:center;margin-top:20px">Correct word</p>
+            <div id="playerAnswer" class="round-answer"></div>
+          </div>
+        </div>
+
+        <div id="playerFinished" class="big-center hidden">
+          <span class="tag">GAME COMPLETE</span>
+          <h2>Thanks for playing!</h2>
+          <p>Your final position appears in the scoreboard.</p>
+        </div>
+      </div>
+
+      <aside class="panel scoreboard">
+        <h3>Live scoreboard</h3>
+        <div id="playerScores"></div>
+      </aside>
+    </div>
+  </section>
+
+  <div class="footer">Tip: when hosted online, students can scan the host QR code to open the game with the room code already filled in.</div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  const WORDS = [{"word": "accommodate", "clue": "To provide someone with a place, space, or what they need."}, {"word": "achieve", "clue": "To succeed in reaching a goal after effort."}, {"word": "acknowledge", "clue": "To accept or admit that something is true or exists."}, {"word": "acquire", "clue": "To get or obtain something, often through effort or learning."}, {"word": "adequate", "clue": "Good enough or sufficient for a particular purpose."}, {"word": "approach", "clue": "A way of dealing with a problem or situation."}, {"word": "assume", "clue": "To accept something as true without having proof."}, {"word": "aware", "clue": "Knowing that something exists or understanding a situation."}, {"word": "benefit", "clue": "An advantage or something that produces a good result."}, {"word": "challenge", "clue": "A difficult task or situation that tests your ability."}, {"word": "circumstance", "clue": "A fact or condition connected with an event or situation."}, {"word": "collaborate", "clue": "To work together with other people on a shared task."}, {"word": "commitment", "clue": "A strong promise or willingness to give time and effort."}, {"word": "consequence", "clue": "A result or effect of an action or decision."}, {"word": "considerable", "clue": "Large or important enough to be noticed."}, {"word": "contribute", "clue": "To give time, money, ideas, or effort to help achieve something."}, {"word": "convince", "clue": "To make someone believe that something is true."}, {"word": "determine", "clue": "To discover, decide, or establish something exactly."}, {"word": "efficient", "clue": "Working well without wasting time, energy, or resources."}, {"word": "emphasize", "clue": "To give special importance or attention to something."}, {"word": "encounter", "clue": "To meet or experience something, often unexpectedly."}, {"word": "establish", "clue": "To start, create, or firmly set up something."}, {"word": "evaluate", "clue": "To judge the quality, importance, or value of something."}, {"word": "evidence", "clue": "Facts or information that show whether something is true."}, {"word": "expand", "clue": "To become larger or make something larger."}, {"word": "flexible", "clue": "Able to change or adapt easily to different situations."}, {"word": "furthermore", "clue": "A linking word meaning 'in addition' or 'also'."}, {"word": "generate", "clue": "To produce or create something."}, {"word": "illustrate", "clue": "To explain or make something clear by using examples or pictures."}, {"word": "implement", "clue": "To put a plan, decision, or system into action."}, {"word": "indicate", "clue": "To show, point out, or suggest something."}, {"word": "maintain", "clue": "To keep something in good condition or at the same level."}, {"word": "negotiate", "clue": "To discuss something formally in order to reach an agreement."}, {"word": "objective", "clue": "A goal that you are trying to achieve."}, {"word": "participate", "clue": "To take part in an activity or event."}, {"word": "perspective", "clue": "A particular way of thinking about or viewing something."}, {"word": "potential", "clue": "Possible in the future, or the ability to develop successfully."}, {"word": "prevent", "clue": "To stop something from happening."}, {"word": "priority", "clue": "Something considered more important than other things."}, {"word": "recommend", "clue": "To suggest that someone should choose or do something."}, {"word": "relevant", "clue": "Closely connected with the subject being discussed."}, {"word": "require", "clue": "To need something or make something necessary."}, {"word": "respond", "clue": "To answer or react to something."}, {"word": "significant", "clue": "Important or large enough to have a noticeable effect."}, {"word": "strategy", "clue": "A planned method for achieving a particular goal."}, {"word": "sufficient", "clue": "Enough for a particular purpose."}, {"word": "transform", "clue": "To change completely in form, appearance, or character."}, {"word": "vary", "clue": "To change or be different depending on the situation."}, {"word": "whereas", "clue": "A linking word used to contrast two facts or ideas."}, {"word": "willingness", "clue": "The quality of being ready and happy to do something."}];
+  const $ = (id) => document.getElementById(id);
+
+  const ui = {
+    netDot:$('netDot'), netText:$('netText'),
+    landing:$('landing'), hostSetup:$('hostSetup'), joinSetup:$('joinSetup'),
+    hostApp:$('hostApp'), playerApp:$('playerApp'),
+    hostChoice:$('hostChoice'), joinChoice:$('joinChoice'), createRoom:$('createRoom'),
+    joinRoom:$('joinRoom'), joinMessage:$('joinMessage'), playerName:$('playerName'),
+    roomInput:$('roomInput'), roundCount:$('roundCount'), roundSeconds:$('roundSeconds'),
+    roomCodeDisplay:$('roomCodeDisplay'), qrCode:$('qrCode'), joinLinkBox:$('joinLinkBox'), copyJoinLink:$('copyJoinLink'), qrWarning:$('qrWarning'), startGame:$('startGame'), hostPlayers:$('hostPlayers'),
+    hostLobby:$('hostLobby'), hostRound:$('hostRound'), hostFinished:$('hostFinished'),
+    hostRoundLabel:$('hostRoundLabel'), hostTimer:$('hostTimer'), hostTiles:$('hostTiles'),
+    hostPattern:$('hostPattern'), hostClue:$('hostClue'), hostFeedback:$('hostFeedback'),
+    showClue:$('showClue'), revealLetter:$('revealLetter'), endRound:$('endRound'),
+    nextRound:$('nextRound'), answerReveal:$('answerReveal'), hostAnswer:$('hostAnswer'),
+    hostRestart:$('hostRestart'),
+    playerWaiting:$('playerWaiting'), playerRound:$('playerRound'), playerFinished:$('playerFinished'),
+    playerWelcome:$('playerWelcome'), playerRoundLabel:$('playerRoundLabel'), playerTimer:$('playerTimer'),
+    playerTiles:$('playerTiles'), playerPattern:$('playerPattern'), playerClue:$('playerClue'),
+    guessForm:$('guessForm'), guessInput:$('guessInput'), submitGuess:$('submitGuess'),
+    playerFeedback:$('playerFeedback'), playerAnswerReveal:$('playerAnswerReveal'),
+    playerAnswer:$('playerAnswer'), playerScores:$('playerScores')
+  };
+
+  let peer = null;
+  let hostConn = null;
+  const connections = new Map();
+  const players = new Map();
+  let role = null;
+  let roomCode = '';
+  let game = null;
+  let timerHandle = null;
+  let clientTimerHandle = null;
+  let localPlayerName = '';
+
+  function setNet(text, live=false) {
+    ui.netText.textContent = text;
+    ui.netDot.classList.toggle('live', live);
+  }
+
+  function showOnly(target) {
+    ui.hostSetup.classList.add('hidden');
+    ui.joinSetup.classList.add('hidden');
+    if (target) target.classList.remove('hidden');
+  }
+
+  document.querySelectorAll('.backLanding').forEach(btn => btn.addEventListener('click', () => showOnly(null)));
+  ui.hostChoice.addEventListener('click', () => showOnly(ui.hostSetup));
+  ui.joinChoice.addEventListener('click', () => showOnly(ui.joinSetup));
+
+  function randomCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let out = '';
+    for (let i=0;i<6;i++) out += chars[Math.floor(Math.random()*chars.length)];
+    return out;
+  }
+
+  function peerIdFromRoom(code) {
+    return 'scramble-arena-' + code.toLowerCase();
+  }
+
+  function shuffle(arr) {
+    const a = [...arr];
+    for (let i=a.length-1;i>0;i--) {
+      const j = Math.floor(Math.random()*(i+1));
+      [a[i],a[j]]=[a[j],a[i]];
+    }
+    return a;
+  }
+
+  function scrambleWord(word) {
+    let s = word;
+    for (let tries=0; tries<12 && s === word; tries++) {
+      s = shuffle(word.split('')).join('');
+    }
+    if (s === word && word.length > 2) s = word.slice(1) + word[0];
+    return s.toUpperCase();
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
+  }
+
+  function safeSend(conn, msg) {
+    try { if (conn && conn.open) conn.send(msg); } catch (e) {}
+  }
+
+  function broadcast(msg) {
+    connections.forEach((conn) => safeSend(conn, msg));
+  }
+
+  function scoreRows() {
+    return [...players.values()]
+      .sort((a,b) => b.score - a.score || a.joinOrder - b.joinOrder)
+      .map((p,i) => ({rank:i+1,name:p.name,score:p.score,solved:p.solvedCurrent}));
+  }
+
+  function renderScoreTable(target, compact=false) {
+    const rows = scoreRows();
+    if (!rows.length) {
+      target.innerHTML = '<p class="help">Waiting for players…</p>';
+      return;
+    }
+    if (compact) {
+      target.innerHTML = '<table><thead><tr><th>#</th><th>Player</th><th>Score</th></tr></thead><tbody>' +
+        rows.map(r => `<tr><td class="rank">${r.rank}</td><td>${escapeHtml(r.name)}</td><td class="score">${r.score}</td></tr>`).join('') +
+        '</tbody></table>';
+    } else {
+      target.innerHTML = rows.map(r => `
+        <div class="player-card">
+          <div class="avatar">${escapeHtml(r.name.slice(0,1).toUpperCase())}</div>
+          <div><b>${escapeHtml(r.name)}</b><br><small>${r.solved ? 'Solved this word ✓' : 'Thinking…'}</small></div>
+          <div class="score">${r.score}</div>
+        </div>`).join('');
+    }
+  }
+
+  function syncAll(extra={}) {
+    if (!game) return;
+    const state = publicState();
+    broadcast({type:'state', state, ...extra});
+    renderScoreTable(ui.hostPlayers, false);
+  }
+
+  function publicState() {
+    if (!game) return null;
+    const current = game.words[game.index] || null;
+    return {
+      status: game.status,
+      index: game.index,
+      total: game.words.length,
+      duration: game.duration,
+      deadline: game.deadline,
+      scramble: current ? current.scramble : '',
+      clue: game.clueShown && current ? current.clue : '',
+      pattern: current ? makePattern(current.word, game.revealed) : '',
+      answer: game.status === 'roundEnded' && current ? current.word.toUpperCase() : '',
+      scores: scoreRows()
+    };
+  }
+
+  function makePattern(word, revealed) {
+    const set = new Set(revealed || []);
+    return word.toUpperCase().split('').map((ch,i) => set.has(i) ? ch : '_').join(' ');
+  }
+
+
+  function buildJoinUrl(code) {
+    try {
+      const url = new URL(window.location.href);
+      url.search = '';
+      url.hash = '';
+      url.searchParams.set('room', code);
+      return url.toString();
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function renderJoinQr(code) {
+    const joinUrl = buildJoinUrl(code);
+    ui.joinLinkBox.textContent = joinUrl || 'Unable to create join link.';
+    ui.qrCode.innerHTML = '';
+    ui.qrWarning.classList.add('hidden');
+    ui.qrWarning.textContent = '';
+
+    const isWeb = window.location.protocol === 'https:' || window.location.protocol === 'http:';
+    if (!isWeb) {
+      ui.qrWarning.textContent =
+        'This file is currently opened directly from your computer. Upload the HTML file to a website first (for example Netlify, GitHub Pages, or another web host). Then reopen the hosted https:// link and create the room again.';
+      ui.qrWarning.classList.remove('hidden');
+      ui.qrCode.innerHTML = '<div style="color:#111;text-align:center;font-weight:800;padding:18px">Upload online<br>to enable QR joining</div>';
+      return;
+    }
+
+    if (typeof QRCode === 'undefined') {
+      ui.qrWarning.textContent = 'The QR library did not load. Players can still use the join link shown here.';
+      ui.qrWarning.classList.remove('hidden');
+      return;
+    }
+
+    new QRCode(ui.qrCode, {
+      text: joinUrl,
+      width: 176,
+      height: 176,
+      colorDark: '#07111f',
+      colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.M
+    });
+  }
+
+  ui.copyJoinLink.addEventListener('click', async () => {
+    const value = ui.joinLinkBox.textContent.trim();
+    if (!value || !/^https?:\/\//i.test(value)) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      const original = ui.copyJoinLink.textContent;
+      ui.copyJoinLink.textContent = 'Copied!';
+      setTimeout(() => ui.copyJoinLink.textContent = original, 1200);
+    } catch (e) {
+      ui.qrWarning.textContent = 'Copy was blocked by the browser. You can select the join link above manually.';
+      ui.qrWarning.classList.remove('hidden');
+    }
+  });
+
+  ui.createRoom.addEventListener('click', createHostRoom);
+
+  function createHostRoom() {
+    if (typeof Peer === 'undefined') {
+      alert('The multiplayer connection library could not load. Check your internet connection and reopen the file.');
+      return;
+    }
+    roomCode = randomCode();
+    role = 'host';
+    ui.createRoom.disabled = true;
+    setNet('Creating room…');
+
+    peer = new Peer(peerIdFromRoom(roomCode), {debug:1});
+    peer.on('open', () => {
+      ui.landing.classList.add('hidden');
+      ui.hostApp.classList.remove('hidden');
+      ui.roomCodeDisplay.textContent = roomCode;
+      renderJoinQr(roomCode);
+      setNet('Room online', true);
+      ui.createRoom.disabled = false;
+    });
+    peer.on('connection', handleIncomingConnection);
+    peer.on('error', (err) => {
+      ui.createRoom.disabled = false;
+      if (err && err.type === 'unavailable-id') {
+        roomCode = randomCode();
+        try { peer.destroy(); } catch(e) {}
+        peer = null;
+        createHostRoom();
+        return;
+      }
+      setNet('Connection error');
+      alert('Could not create the room. Check the internet connection and try again.');
+    });
+  }
+
+  function handleIncomingConnection(conn) {
+    conn.on('open', () => {
+      conn.on('data', data => handleHostData(conn, data));
+      conn.on('close', () => removeConnection(conn.peer));
+      conn.on('error', () => removeConnection(conn.peer));
+    });
+  }
+
+  function handleHostData(conn, data) {
+    if (!data || typeof data !== 'object') return;
+    if (data.type === 'join') {
+      const requested = String(data.name || '').trim().slice(0,18);
+      const name = requested || 'Player';
+      if (!players.has(conn.peer) && players.size >= 4) {
+        safeSend(conn, {type:'full'});
+        setTimeout(() => conn.close(), 300);
+        return;
+      }
+      const existing = [...players.entries()].find(([,p]) => p.name.toLowerCase() === name.toLowerCase());
+      if (existing && existing[0] !== conn.peer) {
+        safeSend(conn, {type:'nameTaken'});
+        return;
+      }
+      connections.set(conn.peer, conn);
+      if (!players.has(conn.peer)) {
+        players.set(conn.peer, {name, score:0, joinOrder:players.size+1, solvedCurrent:false});
+      }
+      ui.startGame.disabled = players.size < 1;
+      safeSend(conn, {type:'joined', name});
+      if (game) safeSend(conn, {type:'state', state:publicState()});
+      renderScoreTable(ui.hostPlayers, false);
+      syncAll();
+    }
+    if (data.type === 'guess') handleGuess(conn.peer, String(data.guess || ''));
+  }
+
+  function removeConnection(peerId) {
+    connections.delete(peerId);
+    players.delete(peerId);
+    ui.startGame.disabled = players.size < 1;
+    renderScoreTable(ui.hostPlayers, false);
+    if (game) syncAll();
+  }
+
+  ui.startGame.addEventListener('click', startHostGame);
+
+  function startHostGame() {
+    const count = Math.max(1, Math.min(50, Number(ui.roundCount.value) || 20));
+    const duration = Math.max(20, Math.min(120, Number(ui.roundSeconds.value) || 60));
+    const selected = shuffle(WORDS).slice(0, count).map(w => ({...w, scramble:scrambleWord(w.word)}));
+    players.forEach(p => { p.score = 0; p.solvedCurrent = false; });
+    game = {
+      words:selected, index:0, duration, status:'playing', deadline:Date.now()+duration*1000,
+      clueShown:false, revealed:[], solveOrder:0
+    };
+    ui.hostLobby.classList.add('hidden');
+    ui.hostFinished.classList.add('hidden');
+    ui.hostRound.classList.remove('hidden');
+    beginRound();
+  }
+
+  function beginRound() {
+    clearInterval(timerHandle);
+    game.status = 'playing';
+    game.deadline = Date.now() + game.duration*1000;
+    game.clueShown = false;
+    game.revealed = [];
+    game.solveOrder = 0;
+    players.forEach(p => p.solvedCurrent = false);
+    renderHostRound();
+    syncAll();
+    timerHandle = setInterval(() => {
+      const left = Math.max(0, Math.ceil((game.deadline - Date.now())/1000));
+      ui.hostTimer.textContent = left + 's';
+      if (left <= 0) endCurrentRound('Time is up!');
+    },250);
+  }
+
+  function renderTiles(target, scramble) {
+    target.innerHTML = '';
+    String(scramble || '').split('').forEach(ch => {
+      const d = document.createElement('div');
+      d.className='tile';
+      d.textContent=ch;
+      target.appendChild(d);
+    });
+  }
+
+  function renderHostRound() {
+    const current = game.words[game.index];
+    ui.hostRoundLabel.textContent = `Word ${game.index+1} / ${game.words.length}`;
+    ui.hostTimer.textContent = game.duration + 's';
+    renderTiles(ui.hostTiles,current.scramble);
+    ui.hostPattern.textContent = makePattern(current.word, game.revealed);
+    ui.hostClue.textContent = current.clue;
+    ui.hostClue.classList.toggle('hidden', !game.clueShown);
+    ui.hostFeedback.textContent = '';
+    ui.answerReveal.classList.add('hidden');
+    ui.nextRound.classList.add('hidden');
+    ui.showClue.disabled = false;
+    ui.revealLetter.disabled = false;
+    ui.endRound.disabled = false;
+    renderScoreTable(ui.hostPlayers,false);
+  }
+
+  ui.showClue.addEventListener('click', () => {
+    if (!game || game.status !== 'playing') return;
+    game.clueShown = true;
+    ui.hostClue.textContent = game.words[game.index].clue;
+    ui.hostClue.classList.remove('hidden');
+    syncAll();
+  });
+
+  ui.revealLetter.addEventListener('click', () => {
+    if (!game || game.status !== 'playing') return;
+    const word = game.words[game.index].word;
+    const candidates = word.split('').map((_,i)=>i).filter(i => !game.revealed.includes(i));
+    if (!candidates.length) return;
+    const index = candidates[Math.floor(Math.random()*candidates.length)];
+    game.revealed.push(index);
+    ui.hostPattern.textContent = makePattern(word, game.revealed);
+    if (game.revealed.length >= word.length) ui.revealLetter.disabled = true;
+    syncAll();
+  });
+
+  ui.endRound.addEventListener('click', () => endCurrentRound('Round ended by host.'));
+
+  function handleGuess(peerId, rawGuess) {
+    if (!game || game.status !== 'playing') return;
+    const player = players.get(peerId);
+    const conn = connections.get(peerId);
+    if (!player || !conn || player.solvedCurrent) return;
+
+    const guess = rawGuess.trim().toLowerCase().replace(/[^a-z]/g,'');
+    const answer = game.words[game.index].word.toLowerCase();
+    if (!guess) return;
+
+    if (guess === answer) {
+      game.solveOrder += 1;
+      const rankPoints = [100,80,60,40][Math.min(game.solveOrder-1,3)];
+      const helpPenalty = (game.clueShown ? 8 : 0) + game.revealed.length*5;
+      const points = Math.max(20, rankPoints - helpPenalty);
+      player.score += points;
+      player.solvedCurrent = true;
+      safeSend(conn, {type:'feedback', correct:true, message:`Correct! +${points} points`});
+      ui.hostFeedback.textContent = `${player.name} solved it!`;
+      ui.hostFeedback.className = 'feedback good';
+      renderScoreTable(ui.hostPlayers,false);
+      syncAll();
+      const active = [...players.values()];
+      if (active.length && active.every(p => p.solvedCurrent)) endCurrentRound('Everyone solved it!');
+    } else {
+      safeSend(conn, {type:'feedback', correct:false, message:'Not yet — try again.'});
+    }
+  }
+
+  function endCurrentRound(message) {
+    if (!game || game.status !== 'playing') return;
+    clearInterval(timerHandle);
+    game.status='roundEnded';
+    ui.hostFeedback.textContent = message || '';
+    ui.hostFeedback.className='feedback gold';
+    ui.hostAnswer.textContent=game.words[game.index].word.toUpperCase();
+    ui.answerReveal.classList.remove('hidden');
+    ui.nextRound.classList.remove('hidden');
+    ui.showClue.disabled=true; ui.revealLetter.disabled=true; ui.endRound.disabled=true;
+    syncAll();
+  }
+
+  ui.nextRound.addEventListener('click', () => {
+    if (!game || game.status !== 'roundEnded') return;
+    game.index += 1;
+    if (game.index >= game.words.length) finishGame();
+    else beginRound();
+  });
+
+  function finishGame() {
+    clearInterval(timerHandle);
+    game.status='finished';
+    ui.hostRound.classList.add('hidden');
+    ui.hostFinished.classList.remove('hidden');
+    renderScoreTable(ui.hostPlayers,false);
+    syncAll();
+  }
+
+  ui.hostRestart.addEventListener('click', () => {
+    game=null;
+    ui.hostFinished.classList.add('hidden');
+    ui.hostLobby.classList.remove('hidden');
+    ui.startGame.disabled = players.size < 1;
+    renderScoreTable(ui.hostPlayers,false);
+    broadcast({type:'reset'});
+  });
+
+  ui.joinRoom.addEventListener('click', joinRoom);
+
+  function joinRoom() {
+    if (typeof Peer === 'undefined') {
+      ui.joinMessage.textContent='Connection library did not load. Check internet access and reopen the file.';
+      return;
+    }
+    localPlayerName = ui.playerName.value.trim().slice(0,18);
+    const code = ui.roomInput.value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+    if (!localPlayerName) {
+      ui.joinMessage.textContent='Please enter your name.';
+      return;
+    }
+    if (code.length !== 6) {
+      ui.joinMessage.textContent='Enter the 6-character room code.';
+      return;
+    }
+    roomCode=code;
+    role='player';
+    ui.joinRoom.disabled=true;
+    ui.joinMessage.textContent='Connecting…';
+    setNet('Connecting…');
+
+    peer = new Peer(undefined, {debug:1});
+    peer.on('open', () => {
+      hostConn = peer.connect(peerIdFromRoom(roomCode), {reliable:true});
+      hostConn.on('open', () => {
+        safeSend(hostConn, {type:'join',name:localPlayerName});
+        setNet('Connected',true);
+      });
+      hostConn.on('data', handlePlayerData);
+      hostConn.on('close', () => {
+        setNet('Disconnected');
+        ui.playerFeedback.textContent='Connection to host was lost.';
+        ui.playerFeedback.className='feedback bad';
+      });
+      hostConn.on('error', () => {
+        setNet('Connection error');
+        ui.joinMessage.textContent='Could not connect to that room.';
+        ui.joinRoom.disabled=false;
+      });
+    });
+    peer.on('error', () => {
+      setNet('Connection error');
+      ui.joinMessage.textContent='Could not connect. Check the room code and internet access.';
+      ui.joinRoom.disabled=false;
+    });
+  }
+
+  function handlePlayerData(data) {
+    if (!data || typeof data !== 'object') return;
+    if (data.type === 'full') {
+      ui.joinMessage.textContent='That room already has 4 players.';
+      ui.joinRoom.disabled=false;
+      return;
+    }
+    if (data.type === 'nameTaken') {
+      ui.joinMessage.textContent='That name is already in use. Choose another name.';
+      ui.joinRoom.disabled=false;
+      return;
+    }
+    if (data.type === 'joined') {
+      ui.landing.classList.add('hidden');
+      ui.playerApp.classList.remove('hidden');
+      ui.playerWelcome.textContent = `Ready, ${data.name}!`;
+      ui.joinRoom.disabled=false;
+    }
+    if (data.type === 'feedback') {
+      ui.playerFeedback.textContent=data.message || '';
+      ui.playerFeedback.className='feedback ' + (data.correct ? 'good' : 'bad');
+      if (data.correct) {
+        ui.guessInput.disabled=true;
+        ui.submitGuess.disabled=true;
+      }
+    }
+    if (data.type === 'state') renderPlayerState(data.state);
+    if (data.type === 'reset') {
+      stopClientTimer();
+      ui.playerRound.classList.add('hidden');
+      ui.playerFinished.classList.add('hidden');
+      ui.playerWaiting.classList.remove('hidden');
+      ui.playerFeedback.textContent='';
+    }
+  }
+
+  function renderPlayerState(state) {
+    if (!state) return;
+    renderPlayerScores(state.scores || []);
+    if (state.status === 'finished') {
+      stopClientTimer();
+      ui.playerWaiting.classList.add('hidden');
+      ui.playerRound.classList.add('hidden');
+      ui.playerFinished.classList.remove('hidden');
+      return;
+    }
+    if (state.status === 'playing' || state.status === 'roundEnded') {
+      ui.playerWaiting.classList.add('hidden');
+      ui.playerFinished.classList.add('hidden');
+      ui.playerRound.classList.remove('hidden');
+      ui.playerRoundLabel.textContent=`Word ${state.index+1} / ${state.total}`;
+      renderTiles(ui.playerTiles,state.scramble);
+      ui.playerPattern.textContent=state.pattern || '';
+      ui.playerClue.textContent=state.clue || '';
+      ui.playerClue.classList.toggle('hidden', !state.clue);
+      ui.playerAnswerReveal.classList.toggle('hidden', state.status !== 'roundEnded');
+      ui.playerAnswer.textContent=state.answer || '';
+      if (state.status === 'roundEnded') {
+        ui.guessInput.disabled=true; ui.submitGuess.disabled=true;
+        ui.playerFeedback.textContent='Round complete — wait for the next word.';
+        ui.playerFeedback.className='feedback gold';
+        stopClientTimer();
+        ui.playerTimer.textContent='0s';
+      } else {
+        const me = (state.scores || []).find(s => s.name === localPlayerName);
+        const solved = !!(me && me.solved);
+        ui.guessInput.disabled=solved; ui.submitGuess.disabled=solved;
+        if (!solved && ui.playerFeedback.classList.contains('gold')) ui.playerFeedback.textContent='';
+        startClientTimer(state.deadline);
+        if (!solved) setTimeout(() => ui.guessInput.focus(), 60);
+      }
+    }
+  }
+
+  function renderPlayerScores(rows) {
+    if (!rows.length) {
+      ui.playerScores.innerHTML='<p class="help">Waiting for players…</p>';
+      return;
+    }
+    ui.playerScores.innerHTML='<table><thead><tr><th>#</th><th>Player</th><th>Score</th></tr></thead><tbody>' +
+      rows.map(r => `<tr><td class="rank">${r.rank}</td><td>${escapeHtml(r.name)}${r.solved ? ' ✓' : ''}</td><td class="score">${r.score}</td></tr>`).join('') +
+      '</tbody></table>';
+  }
+
+  function startClientTimer(deadline) {
+    stopClientTimer();
+    const tick=() => {
+      const left=Math.max(0,Math.ceil((Number(deadline)-Date.now())/1000));
+      ui.playerTimer.textContent=left+'s';
+    };
+    tick();
+    clientTimerHandle=setInterval(tick,250);
+  }
+
+  function stopClientTimer() {
+    if (clientTimerHandle) clearInterval(clientTimerHandle);
+    clientTimerHandle=null;
+  }
+
+  ui.guessForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!hostConn || !hostConn.open || ui.guessInput.disabled) return;
+    const guess=ui.guessInput.value.trim();
+    if (!guess) return;
+    safeSend(hostConn,{type:'guess',guess});
+    ui.guessInput.value='';
+  });
+
+
+  (function prefillRoomFromUrl() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const room = (params.get('room') || '').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,6);
+      if (room) {
+        ui.roomInput.value = room;
+        showOnly(ui.joinSetup);
+        setTimeout(() => ui.playerName.focus(), 80);
+      }
+    } catch (e) {}
+  })();
+
+  window.addEventListener('beforeunload', () => {
+    clearInterval(timerHandle);
+    stopClientTimer();
+    try { if (peer) peer.destroy(); } catch(e) {}
+  });
+})();
+</script>
+</body>
+</html>
