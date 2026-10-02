@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Word Scramble Arena</title>
-<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <style>
 :root {
@@ -238,7 +237,7 @@ button{touch-action:manipulation}
             </div>
           </div>
 
-          <div class="notice">You can start the game immediately. Players may join before the game starts or during a round. Multiplayer uses a direct browser-to-browser connection, so all devices need internet access.</div>
+          <div class="notice">You can start the game immediately. Players may join before the game starts or during a round. Multiplayer now uses a server-relayed room connection, so phones do not need a direct connection to the host device.</div>
           <div class="actions">
             <button id="startGame" class="btn primary" type="button" aria-disabled="false">Start game now</button>
           </div>
@@ -327,7 +326,7 @@ button{touch-action:manipulation}
     </div>
   </section>
 
-  <div class="footer">Tip: when hosted online, students can scan the host QR code to open the game with the room code already filled in. <span style="opacity:.65">Version 1.2</span></div>
+  <div class="footer">Tip: when hosted online, students can scan the host QR code to open the game with the room code already filled in. <span style="opacity:.65">Version 2.0 — relay connection</span></div>
 </div>
 
 <script>
@@ -359,16 +358,23 @@ button{touch-action:manipulation}
     playerAnswer:$('playerAnswer'), playerScores:$('playerScores')
   };
 
-  let peer = null;
-  let hostConn = null;
-  const connections = new Map();
+  let relayWs = null;
+  let relayReady = false;
+  let relayClosedIntentionally = false;
+  let relayReconnectTimer = null;
+  let relayQueue = [];
+  let joinTimeout = null;
   const players = new Map();
+  const uidToPlayer = new Map();
   let role = null;
   let roomCode = '';
   let game = null;
   let timerHandle = null;
   let clientTimerHandle = null;
   let localPlayerName = '';
+  const localClientId = (window.crypto && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : 'p-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,10);
 
   function setNet(text, live=false) {
     ui.netText.textContent = text;
@@ -392,38 +398,65 @@ button{touch-action:manipulation}
     return out;
   }
 
-  function peerIdFromRoom(code) {
-    return 'scramble-arena-' + code.toLowerCase();
+  function relayChannel(code) {
+    return 'word-scramble-arena-v2-' + code.toLowerCase();
   }
 
-  function shuffle(arr) {
-    const a = [...arr];
-    for (let i=a.length-1;i>0;i--) {
-      const j = Math.floor(Math.random()*(i+1));
-      [a[i],a[j]]=[a[j],a[i]];
-    }
-    return a;
+  function openRelay(code, alias, onReady, onPacket) {
+    relayClosedIntentionally = false;
+    clearTimeout(relayReconnectTimer);
+
+    const connectSocket = () => {
+      const qs = new URLSearchParams({as: alias || 'Player', announce: 'true'});
+      const ws = new WebSocket('wss://itty.ws/c/' + encodeURIComponent(relayChannel(code)) + '?' + qs.toString());
+      relayWs = ws;
+
+      ws.onopen = () => {
+        relayReady = true;
+        const queued = relayQueue.splice(0);
+        queued.forEach(msg => {
+          try { ws.send(JSON.stringify(msg)); } catch (e) {}
+        });
+        onReady();
+      };
+
+      ws.onmessage = (event) => {
+        let packet;
+        try { packet = JSON.parse(event.data); } catch (e) { return; }
+        const payload = packet && Object.prototype.hasOwnProperty.call(packet, 'message')
+          ? packet.message
+          : null;
+        onPacket(payload, packet || {});
+      };
+
+      ws.onerror = () => {
+        relayReady = false;
+        setNet('Connection issue');
+      };
+
+      ws.onclose = () => {
+        relayReady = false;
+        if (relayClosedIntentionally) return;
+        setNet('Reconnecting…');
+        relayReconnectTimer = setTimeout(connectSocket, 1200);
+      };
+    };
+
+    connectSocket();
   }
 
-  function scrambleWord(word) {
-    let s = word;
-    for (let tries=0; tries<12 && s === word; tries++) {
-      s = shuffle(word.split('')).join('');
-    }
-    if (s === word && word.length > 2) s = word.slice(1) + word[0];
-    return s.toUpperCase();
-  }
-
-  function escapeHtml(str) {
-    return String(str).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
-  }
-
-  function safeSend(conn, msg) {
-    try { if (conn && conn.open) conn.send(msg); } catch (e) {}
+  function sendRelay(msg) {
+    try {
+      if (relayWs && relayWs.readyState === WebSocket.OPEN) {
+        relayWs.send(JSON.stringify(msg));
+      } else {
+        relayQueue.push(msg);
+      }
+    } catch (e) {}
   }
 
   function broadcast(msg) {
-    connections.forEach((conn) => safeSend(conn, msg));
+    sendRelay(msg);
   }
 
   function scoreRows() {
@@ -543,8 +576,8 @@ button{touch-action:manipulation}
   ui.createRoom.addEventListener('click', createHostRoom);
 
   function createHostRoom() {
-    if (typeof Peer === 'undefined') {
-      alert('The multiplayer connection library could not load. Check your internet connection and reopen the file.');
+    if (!('WebSocket' in window)) {
+      alert('This browser does not support the connection needed for multiplayer.');
       return;
     }
     roomCode = randomCode();
@@ -552,8 +585,7 @@ button{touch-action:manipulation}
     ui.createRoom.disabled = true;
     setNet('Creating room…');
 
-    peer = new Peer(peerIdFromRoom(roomCode), {debug:1});
-    peer.on('open', () => {
+    openRelay(roomCode, 'HOST', () => {
       ui.landing.classList.add('hidden');
       ui.hostApp.classList.remove('hidden');
       ui.roomCodeDisplay.textContent = roomCode;
@@ -561,62 +593,70 @@ button{touch-action:manipulation}
       setNet('Room online', true);
       ui.createRoom.disabled = false;
       forceStartEnabled();
-    });
-    peer.on('connection', handleIncomingConnection);
-    peer.on('error', (err) => {
-      ui.createRoom.disabled = false;
-      if (err && err.type === 'unavailable-id') {
-        roomCode = randomCode();
-        try { peer.destroy(); } catch(e) {}
-        peer = null;
-        createHostRoom();
-        return;
-      }
-      setNet('Connection error');
-      alert('Could not create the room. Check the internet connection and try again.');
-    });
+      sendRelay({type:'hostOnline', room:roomCode});
+    }, handleHostRelayPacket);
   }
 
-  function handleIncomingConnection(conn) {
-    conn.on('open', () => {
-      conn.on('data', data => handleHostData(conn, data));
-      conn.on('close', () => removeConnection(conn.peer));
-      conn.on('error', () => removeConnection(conn.peer));
-    });
-  }
+  function handleHostRelayPacket(data, packet) {
+    if (packet.type === 'leave' && packet.uid) {
+      const playerId = uidToPlayer.get(packet.uid);
+      if (playerId) removeRelayPlayer(playerId, packet.uid);
+      return;
+    }
 
-  function handleHostData(conn, data) {
     if (!data || typeof data !== 'object') return;
-    if (data.type === 'join') {
+
+    if (data.type === 'joinRequest') {
+      const playerId = String(data.clientId || '').slice(0,80);
+      if (!playerId) return;
       const requested = String(data.name || '').trim().slice(0,18);
       const name = requested || 'Player';
-      if (!players.has(conn.peer) && players.size >= 4) {
-        safeSend(conn, {type:'full'});
-        setTimeout(() => conn.close(), 300);
+
+      if (!players.has(playerId) && players.size >= 4) {
+        sendRelay({type:'full', target:playerId});
         return;
       }
-      const existing = [...players.entries()].find(([,p]) => p.name.toLowerCase() === name.toLowerCase());
-      if (existing && existing[0] !== conn.peer) {
-        safeSend(conn, {type:'nameTaken'});
+
+      const existingName = [...players.entries()].find(([id,p]) =>
+        id !== playerId && p.name.toLowerCase() === name.toLowerCase()
+      );
+      if (existingName) {
+        sendRelay({type:'nameTaken', target:playerId});
         return;
       }
-      connections.set(conn.peer, conn);
-      if (!players.has(conn.peer)) {
-        players.set(conn.peer, {name, score:0, joinOrder:players.size+1, solvedCurrent:false});
+
+      const current = players.get(playerId);
+      if (current) {
+        current.name = name;
+        current.uid = packet.uid || current.uid;
+      } else {
+        players.set(playerId, {
+          name,
+          score:0,
+          joinOrder:players.size+1,
+          solvedCurrent:false,
+          uid:packet.uid || ''
+        });
       }
-      ui.startGame.disabled = false;
-      safeSend(conn, {type:'joined', name});
-      if (game) safeSend(conn, {type:'state', state:publicState()});
+      if (packet.uid) uidToPlayer.set(packet.uid, playerId);
+
+      forceStartEnabled();
+      sendRelay({type:'joined', target:playerId, name});
+      if (game) sendRelay({type:'state', target:playerId, state:publicState()});
       renderScoreTable(ui.hostPlayers, false);
       syncAll();
     }
-    if (data.type === 'guess') handleGuess(conn.peer, String(data.guess || ''));
+
+    if (data.type === 'guess') {
+      const playerId = String(data.clientId || '');
+      handleGuess(playerId, String(data.guess || ''));
+    }
   }
 
-  function removeConnection(peerId) {
-    connections.delete(peerId);
-    players.delete(peerId);
-    ui.startGame.disabled = false;
+  function removeRelayPlayer(playerId, uid) {
+    players.delete(playerId);
+    if (uid) uidToPlayer.delete(uid);
+    forceStartEnabled();
     renderScoreTable(ui.hostPlayers, false);
     if (game) syncAll();
   }
@@ -706,11 +746,10 @@ button{touch-action:manipulation}
 
   ui.endRound.addEventListener('click', () => endCurrentRound('Round ended by host.'));
 
-  function handleGuess(peerId, rawGuess) {
+  function handleGuess(playerId, rawGuess) {
     if (!game || game.status !== 'playing') return;
-    const player = players.get(peerId);
-    const conn = connections.get(peerId);
-    if (!player || !conn || player.solvedCurrent) return;
+    const player = players.get(playerId);
+    if (!player || player.solvedCurrent) return;
 
     const guess = rawGuess.trim().toLowerCase().replace(/[^a-z]/g,'');
     const answer = game.words[game.index].word.toLowerCase();
@@ -723,7 +762,7 @@ button{touch-action:manipulation}
       const points = Math.max(20, rankPoints - helpPenalty);
       player.score += points;
       player.solvedCurrent = true;
-      safeSend(conn, {type:'feedback', correct:true, message:`Correct! +${points} points`});
+      sendRelay({type:'feedback', target:playerId, correct:true, message:`Correct! +${points} points`});
       ui.hostFeedback.textContent = `${player.name} solved it!`;
       ui.hostFeedback.className = 'feedback good';
       renderScoreTable(ui.hostPlayers,false);
@@ -731,7 +770,7 @@ button{touch-action:manipulation}
       const active = [...players.values()];
       if (active.length && active.every(p => p.solvedCurrent)) endCurrentRound('Everyone solved it!');
     } else {
-      safeSend(conn, {type:'feedback', correct:false, message:'Not yet — try again.'});
+      sendRelay({type:'feedback', target:playerId, correct:false, message:'Not yet — try again.'});
     }
   }
 
@@ -776,12 +815,14 @@ button{touch-action:manipulation}
   ui.joinRoom.addEventListener('click', joinRoom);
 
   function joinRoom() {
-    if (typeof Peer === 'undefined') {
-      ui.joinMessage.textContent='Connection library did not load. Check internet access and reopen the file.';
+    if (!('WebSocket' in window)) {
+      ui.joinMessage.textContent='This browser does not support the connection needed for multiplayer.';
       return;
     }
+
     localPlayerName = ui.playerName.value.trim().slice(0,18);
     const code = ui.roomInput.value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+
     if (!localPlayerName) {
       ui.joinMessage.textContent='Please enter your name.';
       return;
@@ -790,35 +831,30 @@ button{touch-action:manipulation}
       ui.joinMessage.textContent='Enter the 6-character room code.';
       return;
     }
-    roomCode=code;
-    role='player';
-    ui.joinRoom.disabled=true;
-    ui.joinMessage.textContent='Connecting…';
+
+    roomCode = code;
+    role = 'player';
+    ui.joinRoom.disabled = true;
+    ui.joinMessage.textContent='Connecting to room…';
     setNet('Connecting…');
 
-    peer = new Peer(undefined, {debug:1});
-    peer.on('open', () => {
-      hostConn = peer.connect(peerIdFromRoom(roomCode), {reliable:true});
-      hostConn.on('open', () => {
-        safeSend(hostConn, {type:'join',name:localPlayerName});
-        setNet('Connected',true);
-      });
-      hostConn.on('data', handlePlayerData);
-      hostConn.on('close', () => {
-        setNet('Disconnected');
-        ui.playerFeedback.textContent='Connection to host was lost.';
-        ui.playerFeedback.className='feedback bad';
-      });
-      hostConn.on('error', () => {
-        setNet('Connection error');
-        ui.joinMessage.textContent='Could not connect to that room.';
+    clearTimeout(joinTimeout);
+    openRelay(roomCode, localPlayerName, () => {
+      setNet('Finding host…', true);
+      ui.joinMessage.textContent='Finding host…';
+      sendRelay({type:'joinRequest', clientId:localClientId, name:localPlayerName});
+
+      clearTimeout(joinTimeout);
+      joinTimeout = setTimeout(() => {
+        if (!ui.playerApp.classList.contains('hidden')) return;
+        ui.joinMessage.textContent='Room not found yet. Check the room code and make sure the host room is still open.';
         ui.joinRoom.disabled=false;
-      });
-    });
-    peer.on('error', () => {
-      setNet('Connection error');
-      ui.joinMessage.textContent='Could not connect. Check the room code and internet access.';
-      ui.joinRoom.disabled=false;
+        setNet('Host not found');
+      }, 8000);
+    }, (data, packet) => {
+      if (!data || typeof data !== 'object') return;
+      if (data.target && data.target !== localClientId) return;
+      handlePlayerData(data);
     });
   }
 
@@ -835,6 +871,9 @@ button{touch-action:manipulation}
       return;
     }
     if (data.type === 'joined') {
+      clearTimeout(joinTimeout);
+      setNet('Connected', true);
+      ui.joinMessage.textContent='Connected!';
       ui.landing.classList.add('hidden');
       ui.playerApp.classList.remove('hidden');
       ui.playerWelcome.textContent = `Ready, ${data.name}!`;
@@ -923,10 +962,10 @@ button{touch-action:manipulation}
 
   ui.guessForm.addEventListener('submit', (e) => {
     e.preventDefault();
-    if (!hostConn || !hostConn.open || ui.guessInput.disabled) return;
+    if (!relayReady || ui.guessInput.disabled) return;
     const guess=ui.guessInput.value.trim();
     if (!guess) return;
-    safeSend(hostConn,{type:'guess',guess});
+    sendRelay({type:'guess', clientId:localClientId, guess});
     ui.guessInput.value='';
   });
 
@@ -946,7 +985,10 @@ button{touch-action:manipulation}
   window.addEventListener('beforeunload', () => {
     clearInterval(timerHandle);
     stopClientTimer();
-    try { if (peer) peer.destroy(); } catch(e) {}
+    clearTimeout(joinTimeout);
+    relayClosedIntentionally = true;
+    clearTimeout(relayReconnectTimer);
+    try { if (relayWs) relayWs.close(); } catch(e) {}
   });
 })();
 </script>
