@@ -326,7 +326,7 @@ button{touch-action:manipulation}
     </div>
   </section>
 
-  <div class="footer">Tip: when hosted online, students can scan the host QR code to open the game with the room code already filled in. <span style="opacity:.65">Version 2.0 — relay connection</span></div>
+  <div class="footer">Tip: when hosted online, students can scan the host QR code to open the game with the room code already filled in. <span style="opacity:.65">Version 2.1 — reliable start sync</span></div>
 </div>
 
 <script>
@@ -364,6 +364,7 @@ button{touch-action:manipulation}
   let relayReconnectTimer = null;
   let relayQueue = [];
   let joinTimeout = null;
+  let stateRequestTimer = null;
   const players = new Map();
   const uidToPlayer = new Map();
   let role = null;
@@ -647,6 +648,15 @@ button{touch-action:manipulation}
       syncAll();
     }
 
+    if (data.type === 'requestState') {
+      const playerId = String(data.clientId || '');
+      if (playerId && game) {
+        sendRelay({type:'state', target:playerId, state:publicState()});
+      } else if (playerId) {
+        sendRelay({type:'waiting', target:playerId});
+      }
+    }
+
     if (data.type === 'guess') {
       const playerId = String(data.clientId || '');
       handleGuess(playerId, String(data.guess || ''));
@@ -690,6 +700,9 @@ button{touch-action:manipulation}
     players.forEach(p => p.solvedCurrent = false);
     renderHostRound();
     syncAll();
+    [180, 650, 1500].forEach(ms => setTimeout(() => {
+      if (game && game.status === 'playing') syncAll();
+    }, ms));
     timerHandle = setInterval(() => {
       const left = Math.max(0, Math.ceil((game.deadline - Date.now())/1000));
       ui.hostTimer.textContent = left + 's';
@@ -878,6 +891,17 @@ button{touch-action:manipulation}
       ui.playerApp.classList.remove('hidden');
       ui.playerWelcome.textContent = `Ready, ${data.name}!`;
       ui.joinRoom.disabled=false;
+
+      clearInterval(stateRequestTimer);
+      const requestNow = () => {
+        if (relayReady) sendRelay({type:'requestState', clientId:localClientId});
+      };
+      requestNow();
+      stateRequestTimer = setInterval(requestNow, 1000);
+    }
+    if (data.type === 'waiting') {
+      ui.playerWaiting.classList.remove('hidden');
+      ui.playerWelcome.textContent = `Ready, ${localPlayerName}! Waiting for host to start…`;
     }
     if (data.type === 'feedback') {
       ui.playerFeedback.textContent=data.message || '';
@@ -899,6 +923,10 @@ button{touch-action:manipulation}
 
   function renderPlayerState(state) {
     if (!state) return;
+    if (state.status === 'playing' || state.status === 'roundEnded' || state.status === 'finished') {
+      clearInterval(stateRequestTimer);
+      stateRequestTimer = null;
+    }
     renderPlayerScores(state.scores || []);
     if (state.status === 'finished') {
       stopClientTimer();
@@ -986,6 +1014,7 @@ button{touch-action:manipulation}
     clearInterval(timerHandle);
     stopClientTimer();
     clearTimeout(joinTimeout);
+    clearInterval(stateRequestTimer);
     relayClosedIntentionally = true;
     clearTimeout(relayReconnectTimer);
     try { if (relayWs) relayWs.close(); } catch(e) {}
