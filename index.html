@@ -326,7 +326,7 @@ button{touch-action:manipulation}
     </div>
   </section>
 
-  <div class="footer">Tip: when hosted online, students can scan the host QR code to open the game with the room code already filled in. <span style="opacity:.65">Version 3.0 — confirmed student join</span></div>
+  <div class="footer">Tip: when hosted online, students can scan the host QR code to open the game with the room code already filled in. <span style="opacity:.65">Version 4.0 — official relay client</span></div>
 </div>
 
 <script>
@@ -361,8 +361,6 @@ button{touch-action:manipulation}
   let relayWs = null;
   let relayReady = false;
   let relayClosedIntentionally = false;
-  let relayReconnectTimer = null;
-  let relayQueue = [];
   let joinTimeout = null;
   let stateRequestTimer = null;
   let joinRetryTimer = null;
@@ -401,59 +399,102 @@ button{touch-action:manipulation}
   }
 
   function relayChannel(code) {
-    return 'word-scramble-arena-v2-' + code.toLowerCase();
+    return 'word-scramble-arena-v4-' + code.toLowerCase();
+  }
+
+  // Official itty-sockets client (from the service documentation).
+  function connectRelay(channel, options={}) {
+    let socket, closed, queue=[], listeners={}, api;
+    const open = () => {
+      if (socket) return api;
+      socket = new WebSocket(
+        (/^wss?:/.test(channel) ? channel : "wss://itty.ws/c/" + channel) +
+        "?" + new URLSearchParams(options)
+      );
+      socket.onmessage = (event) => {
+        let packet;
+        try { packet = JSON.parse(event.data); } catch (e) { return; }
+        const message = packet?.message;
+        const merged = {
+          ...((message && typeof message === 'object' && !Array.isArray(message)) ? message : {}),
+          ...packet
+        };
+        const eventNames = [
+          merged.type,
+          packet.type ? null : "message",
+          "*"
+        ].filter(Boolean);
+        eventNames.forEach(name => (listeners[name] || []).forEach(fn => fn(merged)));
+      };
+      socket.onopen = () => {
+        queue.splice(0).forEach(payload => socket.send(payload));
+        (listeners.open || []).forEach(fn => fn());
+        if (closed) socket?.close();
+      };
+      socket.onerror = (event) => (listeners.error || []).forEach(fn => fn(event));
+      socket.onclose = () => {
+        socket = null;
+        (listeners.close || []).forEach(fn => fn());
+      };
+      return api;
+    };
+
+    api = {
+      open,
+      send(message) {
+        const payload = JSON.stringify(message);
+        if (socket && socket.readyState === WebSocket.OPEN) socket.send(payload);
+        else {
+          queue.push(payload);
+          open();
+        }
+        return api;
+      },
+      on(type, fn) {
+        (listeners[type] ||= []).push(fn);
+        open();
+        return api;
+      },
+      close() {
+        closed = true;
+        if (socket && socket.readyState === WebSocket.OPEN) socket.close();
+        return api;
+      }
+    };
+    return api;
   }
 
   function openRelay(code, alias, onReady, onPacket) {
     relayClosedIntentionally = false;
-    clearTimeout(relayReconnectTimer);
+    relayReady = false;
 
-    const connectSocket = () => {
-      const qs = new URLSearchParams({as: alias || 'Player', announce: 'true'});
-      const ws = new WebSocket('wss://itty.ws/c/' + encodeURIComponent(relayChannel(code)) + '?' + qs.toString());
-      relayWs = ws;
+    try { if (relayWs) relayWs.close(); } catch (e) {}
 
-      ws.onopen = () => {
+    relayWs = connectRelay(relayChannel(code), {
+      as: alias || 'Player',
+      announce: 'true'
+    })
+      .on('open', () => {
         relayReady = true;
-        const queued = relayQueue.splice(0);
-        queued.forEach(msg => {
-          try { ws.send(JSON.stringify(msg)); } catch (e) {}
-        });
+        setNet(role === 'host' ? 'Room online' : 'Connected to relay', true);
         onReady();
-      };
-
-      ws.onmessage = (event) => {
-        let packet;
-        try { packet = JSON.parse(event.data); } catch (e) { return; }
-        const payload = packet && Object.prototype.hasOwnProperty.call(packet, 'message')
-          ? packet.message
-          : null;
-        onPacket(payload, packet || {});
-      };
-
-      ws.onerror = () => {
+      })
+      .on('message', (message) => {
+        onPacket(message, message || {});
+      })
+      .on('error', () => {
         relayReady = false;
         setNet('Connection issue');
-      };
-
-      ws.onclose = () => {
+      })
+      .on('close', () => {
         relayReady = false;
-        if (relayClosedIntentionally) return;
-        setNet('Reconnecting…');
-        relayReconnectTimer = setTimeout(connectSocket, 1200);
-      };
-    };
-
-    connectSocket();
+        if (!relayClosedIntentionally) setNet('Disconnected');
+      });
   }
 
   function sendRelay(msg) {
     try {
-      if (relayWs && relayWs.readyState === WebSocket.OPEN) {
-        relayWs.send(JSON.stringify(msg));
-      } else {
-        relayQueue.push(msg);
-      }
+      if (relayWs) relayWs.send(msg);
     } catch (e) {}
   }
 
@@ -903,10 +944,10 @@ button{touch-action:manipulation}
       clearTimeout(joinTimeout);
       joinTimeout = setTimeout(() => {
         if (!ui.playerApp.classList.contains('hidden')) return;
-        ui.joinMessage.textContent='Room not found yet. Check the room code and make sure the host room is still open.';
+        ui.joinMessage.textContent='Could not confirm the room. Check that the host still has this room open, then try again.';
         ui.joinRoom.disabled=false;
         setNet('Host not found');
-      }, 8000);
+      }, 12000);
     }, (data, packet) => {
       if (!data || typeof data !== 'object') return;
       if (data.target && data.target !== localClientId) return;
@@ -1072,7 +1113,6 @@ button{touch-action:manipulation}
     clearInterval(stateRequestTimer);
     clearInterval(joinRetryTimer);
     relayClosedIntentionally = true;
-    clearTimeout(relayReconnectTimer);
     try { if (relayWs) relayWs.close(); } catch(e) {}
   });
 })();
