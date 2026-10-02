@@ -1,0 +1,29 @@
+name: B1 multiplayer smoke test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - "b1/index.html"
+      - "b1-smoke-test.mjs"
+      - ".github/workflows/b1-multiplayer-smoke.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Playwright
+        run: |
+          npm install playwright
+          npx playwright install --with-deps chromium
+      - name: Start local site
+        run: |
+          python3 -m http.server 8000 >/tmp/word-scramble-b1-server.log 2>&1 &
+      - name: Run B1 two-browser multiplayer test
+        run: node b1-smoke-test.mjs
