@@ -237,9 +237,9 @@ button{touch-action:manipulation}
             </div>
           </div>
 
-          <div class="notice">Multiplayer uses a direct browser-to-browser connection. All devices need internet access for the connection service; classroom devices on the same Wi‑Fi usually work best.</div>
+          <div class="notice">You can start the game immediately. Players may join before the game starts or during a round. Multiplayer uses a direct browser-to-browser connection, so all devices need internet access.</div>
           <div class="actions">
-            <button id="startGame" class="btn primary" type="button" disabled>Start game</button>
+            <button id="startGame" class="btn primary" type="button">Start game</button>
           </div>
         </div>
 
@@ -602,7 +602,7 @@ button{touch-action:manipulation}
       if (!players.has(conn.peer)) {
         players.set(conn.peer, {name, score:0, joinOrder:players.size+1, solvedCurrent:false});
       }
-      ui.startGame.disabled = players.size < 1;
+      ui.startGame.disabled = false;
       safeSend(conn, {type:'joined', name});
       if (game) safeSend(conn, {type:'state', state:publicState()});
       renderScoreTable(ui.hostPlayers, false);
@@ -614,7 +614,7 @@ button{touch-action:manipulation}
   function removeConnection(peerId) {
     connections.delete(peerId);
     players.delete(peerId);
-    ui.startGame.disabled = players.size < 1;
+    ui.startGame.disabled = false;
     renderScoreTable(ui.hostPlayers, false);
     if (game) syncAll();
   }
@@ -764,7 +764,7 @@ button{touch-action:manipulation}
     game=null;
     ui.hostFinished.classList.add('hidden');
     ui.hostLobby.classList.remove('hidden');
-    ui.startGame.disabled = players.size < 1;
+    ui.startGame.disabled = false;
     renderScoreTable(ui.hostPlayers,false);
     broadcast({type:'reset'});
   });
