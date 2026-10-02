@@ -11,7 +11,7 @@ host.on('pageerror', err => console.log('HOST PAGEERROR:', err.message));
 player.on('console', msg => console.log('PLAYER CONSOLE:', msg.type(), msg.text()));
 player.on('pageerror', err => console.log('PLAYER PAGEERROR:', err.message));
 
-const base = 'http://127.0.0.1:8000/b1/?v=b1-1';
+const base = 'http://127.0.0.1:8000/b1/?v=b1-2';
 
 try {
   await host.goto(base, {waitUntil:'domcontentloaded'});
@@ -46,8 +46,8 @@ try {
 
   const hostLabel = (await host.textContent('#hostRoundLabel')).trim();
   const playerLabel = (await player.textContent('#playerRoundLabel')).trim();
-  if (!hostLabel.startsWith('Word 1 /')) throw new Error('Host did not enter Word 1: ' + hostLabel);
-  if (!playerLabel.startsWith('Word 1 /')) throw new Error('Player did not enter Word 1: ' + playerLabel);
+  if (!hostLabel.startsWith('Sentence 1 /')) throw new Error('Host did not enter Sentence 1: ' + hostLabel);
+  if (!playerLabel.startsWith('Sentence 1 /')) throw new Error('Player did not enter Sentence 1: ' + playerLabel);
 
   console.log('PASS');
   console.log(JSON.stringify({room, hostLabel, playerLabel}));
