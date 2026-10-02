@@ -239,7 +239,8 @@ button{touch-action:manipulation}
 
           <div class="notice">You can start the game immediately. Players may join before the game starts or during a round. Multiplayer now uses a server-relayed room connection, so phones do not need a direct connection to the host device.</div>
           <div class="actions">
-            <button id="startGame" class="btn primary" type="button" aria-disabled="false">Start game now</button>
+            <button id="startGame" class="btn primary" type="button" aria-disabled="false" onclick="window.startWordGameNow && window.startWordGameNow()">Start game now</button>
+            <button class="btn good" type="button" onclick="window.startWordGameNow && window.startWordGameNow()">Start first word</button>
           </div>
         </div>
 
@@ -326,7 +327,7 @@ button{touch-action:manipulation}
     </div>
   </section>
 
-  <div class="footer">Tip: when hosted online, students can scan the host QR code to open the game with the room code already filled in. <span style="opacity:.65">Version 2.1 — reliable start sync</span></div>
+  <div class="footer">Tip: when hosted online, students can scan the host QR code to open the game with the room code already filled in. <span style="opacity:.65">Version 2.2 — direct start button</span></div>
 </div>
 
 <script>
@@ -642,6 +643,7 @@ button{touch-action:manipulation}
       if (packet.uid) uidToPlayer.set(packet.uid, playerId);
 
       forceStartEnabled();
+      ui.startGame.textContent = 'Start game now';
       sendRelay({type:'joined', target:playerId, name});
       if (game) sendRelay({type:'state', target:playerId, state:publicState()});
       renderScoreTable(ui.hostPlayers, false);
@@ -671,9 +673,33 @@ button{touch-action:manipulation}
     if (game) syncAll();
   }
 
-  function forceStartEnabled(){ ui.startGame.disabled=false; ui.startGame.removeAttribute('disabled'); ui.startGame.setAttribute('aria-disabled','false'); }
+  function forceStartEnabled(){
+    ui.startGame.disabled=false;
+    ui.startGame.removeAttribute('disabled');
+    ui.startGame.setAttribute('aria-disabled','false');
+    ui.startGame.style.pointerEvents='auto';
+  }
   forceStartEnabled();
-  ui.startGame.addEventListener('click', () => { forceStartEnabled(); startHostGame(); });
+
+  let startLock = false;
+  window.startWordGameNow = function() {
+    forceStartEnabled();
+    if (startLock) return;
+    startLock = true;
+    try {
+      startHostGame();
+    } catch (err) {
+      startLock = false;
+      ui.hostFeedback.textContent = 'Could not start the game. Reload this page and create a new room.';
+      ui.hostFeedback.className = 'feedback bad';
+      console.error(err);
+    }
+  };
+
+  ui.startGame.addEventListener('click', (event) => {
+    event.preventDefault();
+    window.startWordGameNow();
+  });
 
   function startHostGame() {
     const count = Math.max(1, Math.min(50, Number(ui.roundCount.value) || 20));
@@ -688,6 +714,7 @@ button{touch-action:manipulation}
     ui.hostFinished.classList.add('hidden');
     ui.hostRound.classList.remove('hidden');
     beginRound();
+    startLock = false;
   }
 
   function beginRound() {
