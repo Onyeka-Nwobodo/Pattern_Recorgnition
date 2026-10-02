@@ -327,7 +327,7 @@ button{touch-action:manipulation}
     </div>
   </section>
 
-  <div class="footer">Tip: when hosted online, students can scan the host QR code to open the game with the room code already filled in. <span style="opacity:.65">Version 5.0 — MQTT classroom rooms</span></div>
+  <div class="footer">Tip: when hosted online, students can scan the host QR code to open the game with the room code already filled in. <span style="opacity:.65">Version 5.1 — tested MQTT rooms</span></div>
 </div>
 
 <script>
@@ -403,7 +403,7 @@ button{touch-action:manipulation}
     return 'word-scramble-arena-v5-' + code.toLowerCase();
   }
 
-  const MQTT_BROKER = 'wss://broker.hivemq.com:8884/mqtt';
+  const MQTT_BROKER = 'wss://broker.emqx.io:8084/mqtt';
 
   function openRelay(code, alias, onReady, onPacket) {
     relayClosedIntentionally = false;
@@ -604,7 +604,7 @@ button{touch-action:manipulation}
       const url = new URL(window.location.href);
       url.search = '';
       url.hash = '';
-      url.searchParams.set('v', '50');
+      url.searchParams.set('v', '51');
       url.searchParams.set('room', code);
       return url.toString();
     } catch (e) {
