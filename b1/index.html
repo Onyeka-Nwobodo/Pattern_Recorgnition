@@ -1,0 +1,1221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Word Scramble Arena</title>
+<script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-database-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<style>
+:root {
+  --bg1:#07111f;
+  --bg2:#0b1f35;
+  --panel:rgba(13,26,44,.82);
+  --panel2:rgba(18,38,63,.88);
+  --line:rgba(255,255,255,.14);
+  --text:#f7fbff;
+  --muted:#a8bdd3;
+  --accent:#48d5ff;
+  --accent2:#9d75ff;
+  --good:#4ee6a8;
+  --bad:#ff6b8a;
+  --gold:#ffd15c;
+}
+*{box-sizing:border-box}
+html{color-scheme:dark}
+body{
+  margin:0;
+  min-height:100vh;
+  font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  color:var(--text);
+  background:
+    radial-gradient(circle at 15% 0%,rgba(72,213,255,.16),transparent 32rem),
+    radial-gradient(circle at 90% 10%,rgba(157,117,255,.18),transparent 30rem),
+    linear-gradient(160deg,var(--bg1),var(--bg2));
+}
+button,input,select{font:inherit}
+button{touch-action:manipulation}
+.shell{width:min(1080px,94vw);margin:auto;padding:24px 0 56px}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:22px}
+.brand{font-weight:900;letter-spacing:.02em;font-size:clamp(1.35rem,4vw,2rem)}
+.brand span{color:var(--accent)}
+.status-pill{
+  display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);
+  background:rgba(255,255,255,.05);border-radius:999px;padding:8px 12px;color:var(--muted);font-size:.9rem
+}
+.dot{width:9px;height:9px;border-radius:50%;background:#7a8ca0;box-shadow:0 0 0 4px rgba(122,140,160,.12)}
+.dot.live{background:var(--good);box-shadow:0 0 18px var(--good)}
+.grid{display:grid;grid-template-columns:1.2fr .8fr;gap:18px}
+.panel{
+  background:linear-gradient(180deg,rgba(21,42,68,.9),rgba(11,25,43,.9));
+  border:1px solid var(--line);border-radius:24px;padding:clamp(18px,4vw,30px);
+  box-shadow:0 24px 65px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.05)
+}
+.panel h1,.panel h2,.panel h3{margin-top:0}
+.hero{padding:38px 0 18px}
+.hero h1{font-size:clamp(2.5rem,8vw,5.3rem);line-height:.92;letter-spacing:-.055em;margin:0;max-width:820px}
+.hero p{color:var(--muted);max-width:700px;font-size:1.05rem;line-height:1.6}
+.actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:24px}
+.btn{
+  min-height:48px;padding:12px 18px;border-radius:14px;border:1px solid var(--line);cursor:pointer;
+  font-weight:800;color:var(--text);background:rgba(255,255,255,.06);transition:.15s ease
+}
+.btn:hover{transform:translateY(-1px);border-color:rgba(72,213,255,.7)}
+.btn:active{transform:translateY(0)}
+.btn.primary{background:linear-gradient(135deg,var(--accent),#72a9ff 55%,var(--accent2));color:#06101c;border:0}
+.btn.good{background:rgba(78,230,168,.13);border-color:rgba(78,230,168,.4)}
+.btn.warn{background:rgba(255,209,92,.12);border-color:rgba(255,209,92,.35)}
+.btn.danger{background:rgba(255,107,138,.12);border-color:rgba(255,107,138,.35)}
+.btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+#startGame{opacity:1!important;cursor:pointer!important;pointer-events:auto!important}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.field label{display:block;color:var(--muted);font-size:.88rem;margin:0 0 7px}
+.field input,.field select{
+  width:100%;min-height:48px;border:1px solid var(--line);border-radius:13px;background:#081625;color:var(--text);
+  padding:12px 14px;outline:none
+}
+.field input:focus,.field select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(72,213,255,.12)}
+.hidden{display:none!important}
+.room-code{
+  font-weight:950;letter-spacing:.16em;font-size:clamp(2rem,8vw,4.2rem);
+  background:linear-gradient(135deg,#fff,var(--accent));-webkit-background-clip:text;background-clip:text;color:transparent
+}
+.help{color:var(--muted);line-height:1.55;font-size:.92rem}
+.players{display:grid;gap:10px}
+.player-card{
+  display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;padding:12px 14px;border:1px solid var(--line);
+  background:rgba(255,255,255,.04);border-radius:14px
+}
+.avatar{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;font-weight:900;background:rgba(72,213,255,.13);border:1px solid rgba(72,213,255,.3)}
+.player-card small{color:var(--muted)}
+.score{font-weight:950;color:var(--gold)}
+.scramble-stage{perspective:900px;padding:12px 0 4px}
+.tiles{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;min-height:86px;align-items:center}
+.tile{
+  width:clamp(45px,8vw,68px);height:clamp(56px,10vw,80px);display:grid;place-items:center;border-radius:16px;
+  font-size:clamp(1.55rem,5vw,2.6rem);font-weight:950;
+  background:linear-gradient(145deg,#183b5c,#0c223a);
+  border:1px solid rgba(255,255,255,.17);
+  box-shadow:0 11px 0 #061221,0 18px 28px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.08);
+  transform:rotateX(5deg) rotateY(-4deg);
+  text-shadow:0 2px 0 #000
+}
+.tile.revealed{background:linear-gradient(145deg,#244f49,#11362f);box-shadow:0 11px 0 #071d1a,0 18px 28px rgba(0,0,0,.25)}
+.meta{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;color:var(--muted);margin-bottom:12px}
+.timer{font-weight:900;color:var(--gold)}
+.clue-box{
+  margin:18px 0;padding:15px 16px;border-left:4px solid var(--accent);background:rgba(72,213,255,.08);
+  border-radius:12px;color:#dff8ff;line-height:1.5
+}
+.answer-pattern{text-align:center;letter-spacing:.18em;font-size:clamp(1.25rem,5vw,2rem);font-weight:900;margin:12px 0 4px;word-break:break-word}
+.feedback{min-height:28px;text-align:center;font-weight:800;margin-top:12px}
+.feedback.good{color:var(--good)} .feedback.bad{color:var(--bad)} .feedback.gold{color:var(--gold)}
+.scoreboard table{width:100%;border-collapse:collapse}
+.scoreboard th,.scoreboard td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:left}
+.scoreboard th{color:var(--muted);font-size:.82rem}
+.scoreboard tr:last-child td{border-bottom:0}
+.rank{font-weight:900;color:var(--muted)}
+.host-controls{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+.tag{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted);font-size:.84rem}
+.big-center{text-align:center;padding:10px 0 4px}
+.big-center h2{font-size:clamp(1.6rem,5vw,2.8rem);margin-bottom:8px}
+.big-center p{color:var(--muted)}
+.notice{border:1px solid rgba(255,209,92,.28);background:rgba(255,209,92,.08);border-radius:14px;padding:12px 14px;color:#ffeaa7;font-size:.9rem;line-height:1.5}
+.round-answer{font-size:clamp(2rem,8vw,4rem);font-weight:950;letter-spacing:.04em;color:var(--good);text-align:center}
+.footer{color:var(--muted);font-size:.82rem;text-align:center;margin-top:18px}
+
+.qr-wrap{
+  display:grid;grid-template-columns:auto 1fr;gap:18px;align-items:center;margin-top:18px;
+  padding:16px;border:1px solid var(--line);background:rgba(255,255,255,.035);border-radius:18px
+}
+#qrCode{
+  width:196px;min-width:196px;min-height:196px;display:grid;place-items:center;
+  background:#fff;border-radius:14px;padding:10px;overflow:hidden
+}
+#qrCode img,#qrCode canvas{max-width:100%;height:auto!important}
+.join-link-box{
+  width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:#081625;
+  color:var(--text);font-size:.86rem;word-break:break-all
+}
+.qr-note{color:var(--muted);line-height:1.5;font-size:.9rem;margin:.55rem 0 0}
+.qr-warning{
+  border:1px solid rgba(255,209,92,.35);background:rgba(255,209,92,.08);
+  border-radius:13px;padding:11px 12px;color:#ffeaa7;font-size:.9rem;line-height:1.5;margin-top:10px
+}
+@media(max-width:620px){.qr-wrap{grid-template-columns:1fr}#qrCode{margin:auto}}
+
+@media(max-width:820px){.grid{grid-template-columns:1fr}.hero{padding-top:16px}}
+@media(max-width:560px){.form-row{grid-template-columns:1fr}.panel{border-radius:18px}.tile{width:42px;height:52px;border-radius:12px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="topbar">
+    <div class="brand">WORD <span>SCRAMBLE</span> ARENA</div>
+    <div class="status-pill"><span id="netDot" class="dot"></span><span id="netText">Not connected</span></div>
+  </div>
+
+  <section id="landing">
+    <div class="hero">
+      <h1>Race to rebuild the word.</h1>
+      <p>One device hosts the round. Up to four players join with a room code, solve the same scramble, use shared clues when needed, and compete for the highest score.</p>
+      <div class="actions">
+        <button id="hostChoice" class="btn primary" type="button">Host a game</button>
+        <button id="joinChoice" class="btn" type="button">Join as player</button>
+      </div>
+    </div>
+
+    <div id="hostSetup" class="panel hidden">
+      <h2>Create a room</h2>
+      <div class="form-row">
+        <div class="field">
+          <label for="roundCount">Words in this game</label>
+          <select id="roundCount">
+            <option value="10">10 words</option>
+            <option value="20" selected>20 words</option>
+            <option value="30">30 words</option>
+            <option value="40">40 words</option>
+            <option value="50">50 words</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="roundSeconds">Seconds per word</label>
+          <select id="roundSeconds">
+            <option value="45">45 seconds</option>
+            <option value="60" selected>60 seconds</option>
+            <option value="75">75 seconds</option>
+            <option value="90">90 seconds</option>
+          </select>
+        </div>
+      </div>
+      <div class="actions">
+        <button id="createRoom" class="btn primary" type="button">Create room</button>
+        <button class="btn backLanding" type="button">Back</button>
+      </div>
+      <p class="help">The host should stay open for the whole game. Players can use the same HTML file on their phones.</p>
+    </div>
+
+    <div id="joinSetup" class="panel hidden">
+      <h2>Join a room</h2>
+      <div class="form-row">
+        <div class="field">
+          <label for="playerName">Your name</label>
+          <input id="playerName" maxlength="18" autocomplete="off" placeholder="e.g. Mia">
+        </div>
+        <div class="field">
+          <label for="roomInput">Room code</label>
+          <input id="roomInput" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="ABC123">
+        </div>
+      </div>
+      <div class="actions">
+        <button id="joinRoom" class="btn primary" type="button">Join game</button>
+        <button class="btn backLanding" type="button">Back</button>
+      </div>
+      <div id="joinMessage" class="help"></div>
+    </div>
+  </section>
+
+  <section id="hostApp" class="hidden">
+    <div class="grid">
+      <div class="panel">
+        <div id="hostLobby">
+          <span class="tag">HOST CONTROL</span>
+          <h2 style="margin-top:14px">Room code</h2>
+          <div id="roomCodeDisplay" class="room-code">------</div>
+          <p class="help">Players can scan the QR code below. The room code will be filled in automatically; they only need to enter their name.</p>
+
+          <div class="qr-wrap">
+            <div id="qrCode" aria-label="QR code for joining this room"></div>
+            <div>
+              <h3 style="margin-bottom:8px">Scan to join</h3>
+              <div id="joinLinkBox" class="join-link-box">The join link will appear here.</div>
+              <div class="actions" style="margin-top:10px">
+                <button id="copyJoinLink" class="btn" type="button">Copy join link</button>
+              </div>
+              <p class="qr-note">This QR works when the game file is hosted online using an <b>https://</b> web address.</p>
+              <div id="qrWarning" class="qr-warning hidden"></div>
+            </div>
+          </div>
+
+          <div id="lobbyStatus" class="notice">Waiting for at least one student to join. When a student is fully connected, their name will appear under Players as <b>Ready ✓</b> and the Start game button will activate.</div>
+          <div class="actions">
+            <button id="startGame" class="btn primary" type="button" disabled aria-disabled="true">Start game</button>
+                      </div>
+        </div>
+
+        <div id="hostRound" class="hidden">
+          <div class="meta">
+            <span id="hostRoundLabel">Word 1 / 20</span>
+            <span class="timer" id="hostTimer">60s</span>
+          </div>
+          <div class="scramble-stage"><div id="hostTiles" class="tiles"></div></div>
+          <div id="hostPattern" class="answer-pattern"></div>
+          <div id="hostClue" class="clue-box hidden"></div>
+          <div id="hostFeedback" class="feedback"></div>
+          <div class="host-controls">
+            <button id="showClue" class="btn warn" type="button">Show clue</button>
+            <button id="revealLetter" class="btn warn" type="button">Reveal a letter</button>
+            <button id="endRound" class="btn danger" type="button">End round</button>
+            <button id="nextRound" class="btn primary hidden" type="button">Next word</button>
+          </div>
+          <div id="answerReveal" class="hidden">
+            <p class="help" style="text-align:center;margin-top:20px">Correct word</p>
+            <div id="hostAnswer" class="round-answer"></div>
+          </div>
+        </div>
+
+        <div id="hostFinished" class="big-center hidden">
+          <span class="tag">GAME COMPLETE</span>
+          <h2>Final scoreboard</h2>
+          <p>Great race. The highest total score is shown on the right.</p>
+          <button id="hostRestart" class="btn primary" type="button">New game</button>
+        </div>
+      </div>
+
+      <aside class="panel scoreboard">
+        <h3>Players</h3>
+        <div id="hostPlayers" class="players"><p class="help">No students joined yet.</p></div>
+      </aside>
+    </div>
+  </section>
+
+  <section id="playerApp" class="hidden">
+    <div class="grid">
+      <div class="panel">
+        <div id="playerWaiting" class="big-center">
+          <span class="tag">YOU'RE IN</span>
+          <h2 id="playerWelcome">Ready!</h2>
+          <p>Wait for the host to start the game.</p>
+        </div>
+
+        <div id="playerRound" class="hidden">
+          <div class="meta">
+            <span id="playerRoundLabel">Word 1 / 20</span>
+            <span class="timer" id="playerTimer">60s</span>
+          </div>
+          <div class="scramble-stage"><div id="playerTiles" class="tiles"></div></div>
+          <div id="playerPattern" class="answer-pattern"></div>
+          <div id="playerClue" class="clue-box hidden"></div>
+          <form id="guessForm">
+            <div class="field">
+              <label for="guessInput">Your answer</label>
+              <input id="guessInput" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Type the complete word">
+            </div>
+            <div class="actions">
+              <button id="submitGuess" class="btn primary" type="submit">Submit answer</button>
+            </div>
+          </form>
+          <div id="playerFeedback" class="feedback" aria-live="polite"></div>
+          <div id="playerAnswerReveal" class="hidden">
+            <p class="help" style="text-align:center;margin-top:20px">Correct word</p>
+            <div id="playerAnswer" class="round-answer"></div>
+          </div>
+        </div>
+
+        <div id="playerFinished" class="big-center hidden">
+          <span class="tag">GAME COMPLETE</span>
+          <h2>Thanks for playing!</h2>
+          <p>Your final position appears in the scoreboard.</p>
+        </div>
+      </div>
+
+      <aside class="panel scoreboard">
+        <h3>Live scoreboard</h3>
+        <div id="playerScores"></div>
+      </aside>
+    </div>
+  </section>
+
+  <div class="footer">Tip: when hosted online, students can scan the host QR code to open the game with the room code already filled in. <span style="opacity:.65">B1 Edition — Firebase multiplayer</span></div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  const WORDS = [{"word":"adventure","clue":"An exciting or unusual experience, often involving travel or new activities."},{"word":"advice","clue":"An opinion or suggestion about what someone should do."},{"word":"afford","clue":"To have enough money or time to pay for or do something."},{"word":"although","clue":"A word used to introduce a contrast, similar to 'even though'."},{"word":"apologize","clue":"To say that you are sorry for something you did."},{"word":"arrange","clue":"To organize or plan something in advance."},{"word":"behave","clue":"To act in a particular way, especially toward other people."},{"word":"borrow","clue":"To take something for a short time and return it later."},{"word":"cancel","clue":"To decide that a planned event or activity will not happen."},{"word":"careful","clue":"Giving attention so that you avoid mistakes or danger."},{"word":"celebrate","clue":"To do something special for an important or happy event."},{"word":"choice","clue":"An option that you can select from two or more possibilities."},{"word":"comfortable","clue":"Feeling relaxed and physically or emotionally at ease."},{"word":"compare","clue":"To look at two or more things to see how they are similar or different."},{"word":"complain","clue":"To say that you are unhappy or not satisfied about something."},{"word":"concentrate","clue":"To give all your attention to one thing."},{"word":"decide","clue":"To choose what to do after thinking about different options."},{"word":"describe","clue":"To say what someone or something is like."},{"word":"develop","clue":"To grow, improve, or become more advanced."},{"word":"difference","clue":"The way in which two people or things are not the same."},{"word":"direction","clue":"The way that someone or something moves or faces."},{"word":"discover","clue":"To find or learn something for the first time."},{"word":"education","clue":"The process of learning, especially at school or college."},{"word":"environment","clue":"The natural world or the conditions around people, animals, and plants."},{"word":"experience","clue":"Knowledge or skill gained from doing or seeing something."},{"word":"explain","clue":"To make something clear by giving details or reasons."},{"word":"familiar","clue":"Known to you because you have seen, heard, or experienced it before."},{"word":"improve","clue":"To make something better or become better."},{"word":"include","clue":"To contain something as one part of a group or whole."},{"word":"increase","clue":"To become larger in number, amount, size, or level."},{"word":"independent","clue":"Able to do things without needing help from other people."},{"word":"information","clue":"Facts or details that tell you something about a subject."},{"word":"invite","clue":"To ask someone to come to an event or place."},{"word":"journey","clue":"The act of travelling from one place to another."},{"word":"language","clue":"A system of words and grammar used by people to communicate."},{"word":"message","clue":"Information sent or given to another person."},{"word":"necessary","clue":"Needed in order to do something or make something happen."},{"word":"opportunity","clue":"A good chance to do something you want or need to do."},{"word":"organize","clue":"To plan or arrange things in a clear and useful way."},{"word":"patient","clue":"Able to wait calmly without becoming annoyed."},{"word":"popular","clue":"Liked or enjoyed by many people."},{"word":"prepare","clue":"To get ready for something that will happen later."},{"word":"promise","clue":"To say that you will definitely do something."},{"word":"receive","clue":"To get something that someone sends, gives, or delivers."},{"word":"remember","clue":"To keep information in your mind or bring it back to your mind."},{"word":"situation","clue":"The set of conditions or events happening at a particular time."},{"word":"succeed","clue":"To achieve the result or goal that you wanted."},{"word":"surprise","clue":"Something unexpected that makes you feel amazed or interested."},{"word":"traditional","clue":"Following customs or ways of doing things that have existed for a long time."},{"word":"usually","clue":"In the way that normally happens or is most common."}];
+  const $ = (id) => document.getElementById(id);
+
+  const ui = {
+    netDot:$('netDot'), netText:$('netText'),
+    landing:$('landing'), hostSetup:$('hostSetup'), joinSetup:$('joinSetup'),
+    hostApp:$('hostApp'), playerApp:$('playerApp'),
+    hostChoice:$('hostChoice'), joinChoice:$('joinChoice'), createRoom:$('createRoom'),
+    joinRoom:$('joinRoom'), joinMessage:$('joinMessage'), playerName:$('playerName'),
+    roomInput:$('roomInput'), roundCount:$('roundCount'), roundSeconds:$('roundSeconds'),
+    roomCodeDisplay:$('roomCodeDisplay'), qrCode:$('qrCode'), joinLinkBox:$('joinLinkBox'), copyJoinLink:$('copyJoinLink'), qrWarning:$('qrWarning'), startGame:$('startGame'), hostPlayers:$('hostPlayers'), lobbyStatus:$('lobbyStatus'),
+    hostLobby:$('hostLobby'), hostRound:$('hostRound'), hostFinished:$('hostFinished'),
+    hostRoundLabel:$('hostRoundLabel'), hostTimer:$('hostTimer'), hostTiles:$('hostTiles'),
+    hostPattern:$('hostPattern'), hostClue:$('hostClue'), hostFeedback:$('hostFeedback'),
+    showClue:$('showClue'), revealLetter:$('revealLetter'), endRound:$('endRound'),
+    nextRound:$('nextRound'), answerReveal:$('answerReveal'), hostAnswer:$('hostAnswer'),
+    hostRestart:$('hostRestart'),
+    playerWaiting:$('playerWaiting'), playerRound:$('playerRound'), playerFinished:$('playerFinished'),
+    playerWelcome:$('playerWelcome'), playerRoundLabel:$('playerRoundLabel'), playerTimer:$('playerTimer'),
+    playerTiles:$('playerTiles'), playerPattern:$('playerPattern'), playerClue:$('playerClue'),
+    guessForm:$('guessForm'), guessInput:$('guessInput'), submitGuess:$('submitGuess'),
+    playerFeedback:$('playerFeedback'), playerAnswerReveal:$('playerAnswerReveal'),
+    playerAnswer:$('playerAnswer'), playerScores:$('playerScores')
+  };
+
+  let relayWs = null;
+  let relayReady = false;
+  let relayClosedIntentionally = false;
+  let joinTimeout = null;
+  let stateRequestTimer = null;
+  let joinRetryTimer = null;
+  const players = new Map();
+  const uidToPlayer = new Map();
+  let role = null;
+  let roomCode = '';
+  let game = null;
+  let timerHandle = null;
+  let clientTimerHandle = null;
+  let localPlayerName = '';
+  const localClientId = (window.crypto && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : 'p-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,10);
+
+  function setNet(text, live=false) {
+    ui.netText.textContent = text;
+    ui.netDot.classList.toggle('live', live);
+  }
+
+  function showOnly(target) {
+    ui.hostSetup.classList.add('hidden');
+    ui.joinSetup.classList.add('hidden');
+    if (target) target.classList.remove('hidden');
+  }
+
+  document.querySelectorAll('.backLanding').forEach(btn => btn.addEventListener('click', () => showOnly(null)));
+  ui.hostChoice.addEventListener('click', () => showOnly(ui.hostSetup));
+  ui.joinChoice.addEventListener('click', () => showOnly(ui.joinSetup));
+
+  function randomCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let out = '';
+    for (let i=0;i<6;i++) out += chars[Math.floor(Math.random()*chars.length)];
+    return out;
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, ch => ({
+      '&':'&amp;',
+      '<':'&lt;',
+      '>':'&gt;',
+      '"':'&quot;',
+      "'":'&#039;'
+    }[ch]));
+  }
+
+  function shuffle(arr) {
+    const a = [...arr];
+    for (let i=a.length-1;i>0;i--) {
+      const j = Math.floor(Math.random()*(i+1));
+      [a[i],a[j]]=[a[j],a[i]];
+    }
+    return a;
+  }
+
+  function scrambleWord(word) {
+    let s = word;
+    for (let tries=0; tries<12 && s === word; tries++) {
+      s = shuffle(word.split('')).join('');
+    }
+    if (s === word && word.length > 2) s = word.slice(1) + word[0];
+    return s.toUpperCase();
+  }
+
+  function relayChannel(code) {
+    return 'word-scramble-arena-b1-v1-' + code.toLowerCase();
+  }
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBNyBgX8YIsErNCvNMmrSSqvYjjG7B6yZM",
+    authDomain: "onyeka-caa22.firebaseapp.com",
+    databaseURL: "https://onyeka-caa22-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "onyeka-caa22",
+    storageBucket: "onyeka-caa22.firebasestorage.app",
+    messagingSenderId: "185498616556",
+    appId: "1:185498616556:web:490e1287b1d1a7733e5bc9",
+    measurementId: "G-2CKP6XJKN4"
+  };
+
+  let firebaseDb = null;
+  let activeRoomRef = null;
+  let activeMessagesRef = null;
+  let activeMessageQuery = null;
+  let activeMessageHandler = null;
+
+  function ensureFirebase() {
+    if (firebaseDb) return firebaseDb;
+    if (typeof firebase === 'undefined' || !firebase.initializeApp) {
+      throw new Error('Firebase library did not load');
+    }
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+    firebaseDb = firebase.database();
+    return firebaseDb;
+  }
+
+  function detachFirebaseRoom() {
+    try {
+      if (activeMessageQuery && activeMessageHandler) {
+        activeMessageQuery.off('child_added', activeMessageHandler);
+      }
+    } catch (e) {}
+    activeMessageQuery = null;
+    activeMessageHandler = null;
+    activeMessagesRef = null;
+    activeRoomRef = null;
+    relayReady = false;
+  }
+
+  function openRelay(code, alias, onReady, onPacket) {
+    relayClosedIntentionally = false;
+    detachFirebaseRoom();
+
+    let db;
+    try {
+      db = ensureFirebase();
+    } catch (err) {
+      setNet('Firebase failed to load');
+      if (role === 'player') {
+        ui.joinMessage.textContent = 'Firebase did not load. Reload the page and try again.';
+        ui.joinRoom.disabled = false;
+      } else {
+        alert('Firebase did not load. Reload the page and try again.');
+      }
+      return;
+    }
+
+    const channel = relayChannel(code);
+    const roomRef = db.ref('rooms/' + channel);
+    const metaRef = roomRef.child('meta');
+    const messagesRef = roomRef.child('messages');
+    const listenFrom = Date.now() - 3000;
+
+    activeRoomRef = roomRef;
+    activeMessagesRef = messagesRef;
+
+    const attachListener = () => {
+      activeMessageQuery = messagesRef.orderByChild('ts').startAt(listenFrom);
+      activeMessageHandler = (snap) => {
+        const message = snap.val();
+        if (!message || typeof message !== 'object') return;
+        onPacket(message, message);
+      };
+      activeMessageQuery.on('child_added', activeMessageHandler, (err) => {
+        console.error('Firebase listener error', err);
+        relayReady = false;
+        setNet('Firebase permission error');
+      });
+      relayReady = true;
+      setNet(role === 'host' ? 'Room online' : 'Room found', true);
+      onReady();
+    };
+
+    if (role === 'host') {
+      setNet('Creating Firebase room…');
+      roomRef.set({
+        meta: {
+          hostOnline: true,
+          roomCode: code,
+          createdAt: firebase.database.ServerValue.TIMESTAMP
+        }
+      }).then(() => {
+        try {
+          metaRef.onDisconnect().update({
+            hostOnline: false,
+            disconnectedAt: firebase.database.ServerValue.TIMESTAMP
+          });
+        } catch (e) {}
+        attachListener();
+      }).catch((err) => {
+        console.error('Firebase room create failed', err);
+        relayReady = false;
+        setNet('Room creation failed');
+        ui.createRoom.disabled = false;
+        alert('Could not create the Firebase room. Check that Realtime Database is in test mode, then try again.');
+      });
+    } else {
+      setNet('Finding Firebase room…');
+      metaRef.once('value').then((snap) => {
+        const meta = snap.val();
+        if (!meta || meta.hostOnline !== true) {
+          relayReady = false;
+          setNet('Host not found');
+          ui.joinMessage.textContent = 'Room could not be found. Make sure the host still has the room open and check the code.';
+          ui.joinRoom.disabled = false;
+          return;
+        }
+        attachListener();
+      }).catch((err) => {
+        console.error('Firebase room lookup failed', err);
+        relayReady = false;
+        setNet('Database access failed');
+        ui.joinMessage.textContent = 'Could not access the room database. Check Firebase Realtime Database rules.';
+        ui.joinRoom.disabled = false;
+      });
+    }
+
+    relayWs = {
+      send(message) {
+        if (!activeMessagesRef) return false;
+        try {
+          activeMessagesRef.push({
+            ...message,
+            senderId: localClientId,
+            senderRole: role,
+            ts: firebase.database.ServerValue.TIMESTAMP
+          });
+          return true;
+        } catch (e) {
+          return false;
+        }
+      },
+      close() {
+        relayClosedIntentionally = true;
+        if (role === 'host' && activeRoomRef) {
+          try {
+            activeRoomRef.child('meta').update({
+              hostOnline: false,
+              closedAt: firebase.database.ServerValue.TIMESTAMP
+            });
+          } catch (e) {}
+        }
+        detachFirebaseRoom();
+      }
+    };
+  }
+
+  function sendRelay(msg) {
+    try {
+      if (relayWs && relayWs.send) return relayWs.send(msg);
+    } catch (e) {}
+    return false;
+  }
+
+  function broadcast(msg) {
+    sendRelay(msg);
+  }
+
+  function scoreRows() {
+    return [...players.values()]
+      .sort((a,b) => b.score - a.score || a.joinOrder - b.joinOrder)
+      .map((p,i) => ({
+        rank:i+1,
+        name:p.name,
+        score:p.score,
+        solved:p.solvedCurrent,
+        ready:!!p.ready
+      }));
+  }
+
+  function confirmedPlayerCount() {
+    return [...players.values()].filter(p => p.ready).length;
+  }
+
+  function updateLobbyControls() {
+    const ready = confirmedPlayerCount();
+    const enabled = ready >= 1;
+    ui.startGame.disabled = !enabled;
+    ui.startGame.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+    ui.startGame.textContent = enabled ? 'Start game' : 'Waiting for student…';
+    if (ui.lobbyStatus) {
+      ui.lobbyStatus.innerHTML = enabled
+        ? `${ready} student${ready === 1 ? '' : 's'} ready. You can start the game now.`
+        : 'Waiting for at least one student to join. Their name will appear under Players as <b>Ready ✓</b>.';
+    }
+  }
+
+  function renderScoreTable(target, compact=false) {
+    const rows = scoreRows();
+    if (!rows.length) {
+      target.innerHTML = '<p class="help">No students joined yet.</p>';
+      return;
+    }
+    if (compact) {
+      target.innerHTML = '<table><thead><tr><th>#</th><th>Player</th><th>Score</th></tr></thead><tbody>' +
+        rows.map(r => `<tr><td class="rank">${r.rank}</td><td>${escapeHtml(r.name)}${r.ready ? ' ✓' : ''}</td><td class="score">${r.score}</td></tr>`).join('') +
+        '</tbody></table>';
+    } else {
+      target.innerHTML = rows.map(r => {
+        const status = game
+          ? (r.solved ? 'Solved this word ✓' : 'Playing…')
+          : (r.ready ? 'Ready ✓' : 'Connecting…');
+        return `
+          <div class="player-card">
+            <div class="avatar">${escapeHtml(r.name.slice(0,1).toUpperCase())}</div>
+            <div><b>${escapeHtml(r.name)}</b><br><small>${status}</small></div>
+            <div class="score">${r.score}</div>
+          </div>`;
+      }).join('');
+    }
+  }
+
+  function syncAll(extra={}) {
+    if (!game) return;
+    const state = publicState();
+    broadcast({type:'state', state, ...extra});
+    renderScoreTable(ui.hostPlayers, false);
+  }
+
+  function publicState() {
+    if (!game) return null;
+    const current = game.words[game.index] || null;
+    return {
+      status: game.status,
+      index: game.index,
+      total: game.words.length,
+      duration: game.duration,
+      deadline: game.deadline,
+      scramble: current ? current.scramble : '',
+      clue: game.clueShown && current ? current.clue : '',
+      pattern: current ? makePattern(current.word, game.revealed) : '',
+      answer: game.status === 'roundEnded' && current ? current.word.toUpperCase() : '',
+      scores: scoreRows()
+    };
+  }
+
+  function makePattern(word, revealed) {
+    const set = new Set(revealed || []);
+    return word.toUpperCase().split('').map((ch,i) => set.has(i) ? ch : '_').join(' ');
+  }
+
+
+  function buildJoinUrl(code) {
+    try {
+      const url = new URL(window.location.href);
+      url.search = '';
+      url.hash = '';
+      url.searchParams.set('v', 'b1-1');
+      url.searchParams.set('room', code);
+      return url.toString();
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function renderJoinQr(code) {
+    const joinUrl = buildJoinUrl(code);
+    ui.joinLinkBox.textContent = joinUrl || 'Unable to create join link.';
+    ui.qrCode.innerHTML = '';
+    ui.qrWarning.classList.add('hidden');
+    ui.qrWarning.textContent = '';
+
+    const isWeb = window.location.protocol === 'https:' || window.location.protocol === 'http:';
+    if (!isWeb) {
+      ui.qrWarning.textContent =
+        'This file is currently opened directly from your computer. Upload the HTML file to a website first (for example Netlify, GitHub Pages, or another web host). Then reopen the hosted https:// link and create the room again.';
+      ui.qrWarning.classList.remove('hidden');
+      ui.qrCode.innerHTML = '<div style="color:#111;text-align:center;font-weight:800;padding:18px">Upload online<br>to enable QR joining</div>';
+      return;
+    }
+
+    if (typeof QRCode === 'undefined') {
+      ui.qrWarning.textContent = 'The QR library did not load. Players can still use the join link shown here.';
+      ui.qrWarning.classList.remove('hidden');
+      return;
+    }
+
+    new QRCode(ui.qrCode, {
+      text: joinUrl,
+      width: 176,
+      height: 176,
+      colorDark: '#07111f',
+      colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.M
+    });
+  }
+
+  ui.copyJoinLink.addEventListener('click', async () => {
+    const value = ui.joinLinkBox.textContent.trim();
+    if (!value || !/^https?:\/\//i.test(value)) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      const original = ui.copyJoinLink.textContent;
+      ui.copyJoinLink.textContent = 'Copied!';
+      setTimeout(() => ui.copyJoinLink.textContent = original, 1200);
+    } catch (e) {
+      ui.qrWarning.textContent = 'Copy was blocked by the browser. You can select the join link above manually.';
+      ui.qrWarning.classList.remove('hidden');
+    }
+  });
+
+  ui.createRoom.addEventListener('click', createHostRoom);
+
+  function createHostRoom() {
+    if (typeof firebase === 'undefined' || !firebase.initializeApp) {
+      alert('Firebase did not load. Reload the page and try again.');
+      return;
+    }
+    roomCode = randomCode();
+    role = 'host';
+    ui.createRoom.disabled = true;
+    setNet('Creating room…');
+
+    openRelay(roomCode, 'HOST', () => {
+      ui.landing.classList.add('hidden');
+      ui.hostApp.classList.remove('hidden');
+      ui.roomCodeDisplay.textContent = roomCode;
+      renderJoinQr(roomCode);
+      setNet('Room online', true);
+      ui.createRoom.disabled = false;
+      updateLobbyControls();
+      sendRelay({type:'hostOnline', room:roomCode});
+    }, handleHostRelayPacket);
+  }
+
+  function handleHostRelayPacket(data, packet) {
+    if (!data || typeof data !== 'object') return;
+
+    if (data.type === 'joinRequest') {
+      const playerId = String(data.clientId || '').slice(0,80);
+      if (!playerId) return;
+      const requested = String(data.name || '').trim().slice(0,18);
+      const name = requested || 'Player';
+
+      if (!players.has(playerId) && players.size >= 4) {
+        sendRelay({type:'full', target:playerId});
+        return;
+      }
+
+      const existingName = [...players.entries()].find(([id,p]) =>
+        id !== playerId && p.name.toLowerCase() === name.toLowerCase()
+      );
+      if (existingName) {
+        sendRelay({type:'nameTaken', target:playerId});
+        return;
+      }
+
+      const current = players.get(playerId);
+      if (current) {
+        current.name = name;
+      } else {
+        players.set(playerId, {
+          name,
+          score:0,
+          joinOrder:players.size+1,
+          solvedCurrent:false,
+          ready:false
+        });
+      }
+
+      renderScoreTable(ui.hostPlayers, false);
+      updateLobbyControls();
+      sendRelay({type:'joined', target:playerId, name});
+      if (game) sendRelay({type:'state', target:playerId, state:publicState()});
+      return;
+    }
+
+    if (data.type === 'joinConfirmed') {
+      const playerId = String(data.clientId || '');
+      const player = players.get(playerId);
+      if (!player) return;
+      player.ready = true;
+      renderScoreTable(ui.hostPlayers, false);
+      updateLobbyControls();
+      sendRelay({type:'readyConfirmed', target:playerId, name:player.name});
+      if (game) sendRelay({type:'state', target:playerId, state:publicState()});
+      return;
+    }
+
+    if (data.type === 'requestState') {
+      const playerId = String(data.clientId || '');
+      if (playerId && game) {
+        sendRelay({type:'state', target:playerId, state:publicState()});
+      } else if (playerId) {
+        sendRelay({type:'waiting', target:playerId});
+      }
+      return;
+    }
+
+    if (data.type === 'guess') {
+      const playerId = String(data.clientId || '');
+      handleGuess(playerId, String(data.guess || ''));
+    }
+  }
+
+  function removeRelayPlayer(playerId) {
+    players.delete(playerId);
+    renderScoreTable(ui.hostPlayers, false);
+    updateLobbyControls();
+    if (game) syncAll();
+  }
+
+  updateLobbyControls();
+
+  ui.startGame.addEventListener('click', (event) => {
+    event.preventDefault();
+    if (confirmedPlayerCount() < 1) {
+      updateLobbyControls();
+      return;
+    }
+    startHostGame();
+  });
+
+  function startHostGame() {
+    const count = Math.max(1, Math.min(50, Number(ui.roundCount.value) || 20));
+    const duration = Math.max(20, Math.min(120, Number(ui.roundSeconds.value) || 60));
+    const selected = shuffle(WORDS).slice(0, count).map(w => ({...w, scramble:scrambleWord(w.word)}));
+    players.forEach(p => { p.score = 0; p.solvedCurrent = false; });
+    game = {
+      words:selected, index:0, duration, status:'playing', deadline:Date.now()+duration*1000,
+      clueShown:false, revealed:[], solveOrder:0
+    };
+    ui.hostLobby.classList.add('hidden');
+    ui.hostFinished.classList.add('hidden');
+    ui.hostRound.classList.remove('hidden');
+    beginRound();
+  }
+
+  function beginRound() {
+    clearInterval(timerHandle);
+    game.status = 'playing';
+    game.deadline = Date.now() + game.duration*1000;
+    game.clueShown = false;
+    game.revealed = [];
+    game.solveOrder = 0;
+    players.forEach(p => p.solvedCurrent = false);
+    renderHostRound();
+    syncAll();
+    [180, 650, 1500].forEach(ms => setTimeout(() => {
+      if (game && game.status === 'playing') syncAll();
+    }, ms));
+    timerHandle = setInterval(() => {
+      const left = Math.max(0, Math.ceil((game.deadline - Date.now())/1000));
+      ui.hostTimer.textContent = left + 's';
+      if (left <= 0) endCurrentRound('Time is up!');
+    },250);
+  }
+
+  function renderTiles(target, scramble) {
+    target.innerHTML = '';
+    String(scramble || '').split('').forEach(ch => {
+      const d = document.createElement('div');
+      d.className='tile';
+      d.textContent=ch;
+      target.appendChild(d);
+    });
+  }
+
+  function renderHostRound() {
+    const current = game.words[game.index];
+    ui.hostRoundLabel.textContent = `Word ${game.index+1} / ${game.words.length}`;
+    ui.hostTimer.textContent = game.duration + 's';
+    renderTiles(ui.hostTiles,current.scramble);
+    ui.hostPattern.textContent = makePattern(current.word, game.revealed);
+    ui.hostClue.textContent = current.clue;
+    ui.hostClue.classList.toggle('hidden', !game.clueShown);
+    ui.hostFeedback.textContent = '';
+    ui.answerReveal.classList.add('hidden');
+    ui.nextRound.classList.add('hidden');
+    ui.showClue.disabled = false;
+    ui.revealLetter.disabled = false;
+    ui.endRound.disabled = false;
+    renderScoreTable(ui.hostPlayers,false);
+  }
+
+  ui.showClue.addEventListener('click', () => {
+    if (!game || game.status !== 'playing') return;
+    game.clueShown = true;
+    ui.hostClue.textContent = game.words[game.index].clue;
+    ui.hostClue.classList.remove('hidden');
+    syncAll();
+  });
+
+  ui.revealLetter.addEventListener('click', () => {
+    if (!game || game.status !== 'playing') return;
+    const word = game.words[game.index].word;
+    const candidates = word.split('').map((_,i)=>i).filter(i => !game.revealed.includes(i));
+    if (!candidates.length) return;
+    const index = candidates[Math.floor(Math.random()*candidates.length)];
+    game.revealed.push(index);
+    ui.hostPattern.textContent = makePattern(word, game.revealed);
+    if (game.revealed.length >= word.length) ui.revealLetter.disabled = true;
+    syncAll();
+  });
+
+  ui.endRound.addEventListener('click', () => endCurrentRound('Round ended by host.'));
+
+  function handleGuess(playerId, rawGuess) {
+    if (!game || game.status !== 'playing') return;
+    const player = players.get(playerId);
+    if (!player || player.solvedCurrent) return;
+
+    const guess = rawGuess.trim().toLowerCase().replace(/[^a-z]/g,'');
+    const answer = game.words[game.index].word.toLowerCase();
+    if (!guess) return;
+
+    if (guess === answer) {
+      game.solveOrder += 1;
+      const rankPoints = [100,80,60,40][Math.min(game.solveOrder-1,3)];
+      const helpPenalty = (game.clueShown ? 8 : 0) + game.revealed.length*5;
+      const points = Math.max(20, rankPoints - helpPenalty);
+      player.score += points;
+      player.solvedCurrent = true;
+      sendRelay({type:'feedback', target:playerId, correct:true, message:`Correct! +${points} points`});
+      ui.hostFeedback.textContent = `${player.name} solved it!`;
+      ui.hostFeedback.className = 'feedback good';
+      renderScoreTable(ui.hostPlayers,false);
+      syncAll();
+      const active = [...players.values()];
+      if (active.length && active.every(p => p.solvedCurrent)) endCurrentRound('Everyone solved it!');
+    } else {
+      sendRelay({type:'feedback', target:playerId, correct:false, message:'Not yet — try again.'});
+    }
+  }
+
+  function endCurrentRound(message) {
+    if (!game || game.status !== 'playing') return;
+    clearInterval(timerHandle);
+    game.status='roundEnded';
+    ui.hostFeedback.textContent = message || '';
+    ui.hostFeedback.className='feedback gold';
+    ui.hostAnswer.textContent=game.words[game.index].word.toUpperCase();
+    ui.answerReveal.classList.remove('hidden');
+    ui.nextRound.classList.remove('hidden');
+    ui.showClue.disabled=true; ui.revealLetter.disabled=true; ui.endRound.disabled=true;
+    syncAll();
+  }
+
+  ui.nextRound.addEventListener('click', () => {
+    if (!game || game.status !== 'roundEnded') return;
+    game.index += 1;
+    if (game.index >= game.words.length) finishGame();
+    else beginRound();
+  });
+
+  function finishGame() {
+    clearInterval(timerHandle);
+    game.status='finished';
+    ui.hostRound.classList.add('hidden');
+    ui.hostFinished.classList.remove('hidden');
+    renderScoreTable(ui.hostPlayers,false);
+    syncAll();
+  }
+
+  ui.hostRestart.addEventListener('click', () => {
+    game=null;
+    ui.hostFinished.classList.add('hidden');
+    ui.hostLobby.classList.remove('hidden');
+    ui.startGame.disabled = false;
+    renderScoreTable(ui.hostPlayers,false);
+    broadcast({type:'reset'});
+  });
+
+  ui.joinRoom.addEventListener('click', joinRoom);
+
+  function joinRoom() {
+    if (typeof firebase === 'undefined' || !firebase.initializeApp) {
+      ui.joinMessage.textContent='Firebase did not load. Reload the page and try again.';
+      return;
+    }
+
+    localPlayerName = ui.playerName.value.trim().slice(0,18);
+    const code = ui.roomInput.value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+
+    if (!localPlayerName) {
+      ui.joinMessage.textContent='Please enter your name.';
+      return;
+    }
+    if (code.length !== 6) {
+      ui.joinMessage.textContent='Enter the 6-character room code.';
+      return;
+    }
+
+    roomCode = code;
+    role = 'player';
+    ui.joinRoom.disabled = true;
+    ui.joinMessage.textContent='Connecting to room…';
+    setNet('Connecting…');
+
+    clearTimeout(joinTimeout);
+    openRelay(roomCode, localPlayerName, () => {
+      setNet('Finding host…', true);
+      ui.joinMessage.textContent='Finding host…';
+      const sendJoin = () => sendRelay({type:'joinRequest', clientId:localClientId, name:localPlayerName});
+      sendJoin();
+      clearInterval(joinRetryTimer);
+      joinRetryTimer = setInterval(sendJoin, 1200);
+
+      clearTimeout(joinTimeout);
+      joinTimeout = setTimeout(() => {
+        if (!ui.playerApp.classList.contains('hidden')) return;
+        ui.joinMessage.textContent='Could not confirm the room. Check that the host still has this room open, then try again.';
+        ui.joinRoom.disabled=false;
+        setNet('Host not found');
+      }, 12000);
+    }, (data, packet) => {
+      if (!data || typeof data !== 'object') return;
+      if (data.target && data.target !== localClientId) return;
+      handlePlayerData(data);
+    });
+  }
+
+  function handlePlayerData(data) {
+    if (!data || typeof data !== 'object') return;
+    if (data.type === 'full') {
+      ui.joinMessage.textContent='That room already has 4 players.';
+      ui.joinRoom.disabled=false;
+      return;
+    }
+    if (data.type === 'nameTaken') {
+      ui.joinMessage.textContent='That name is already in use. Choose another name.';
+      ui.joinRoom.disabled=false;
+      return;
+    }
+    if (data.type === 'joined') {
+      clearTimeout(joinTimeout);
+      clearInterval(joinRetryTimer);
+      setNet('Confirming…', true);
+      ui.joinMessage.textContent='Host found. Confirming your seat…';
+      sendRelay({type:'joinConfirmed', clientId:localClientId});
+      joinRetryTimer = setInterval(() => {
+        if (relayReady) sendRelay({type:'joinConfirmed', clientId:localClientId});
+      }, 1200);
+    }
+
+    if (data.type === 'readyConfirmed') {
+      clearInterval(joinRetryTimer);
+      clearTimeout(joinTimeout);
+      setNet('Connected', true);
+      ui.joinMessage.textContent='Connected and ready!';
+      ui.landing.classList.add('hidden');
+      ui.playerApp.classList.remove('hidden');
+      ui.playerWelcome.textContent = `Ready, ${data.name || localPlayerName}! Wait for the host to start.`;
+      ui.joinRoom.disabled=false;
+
+      clearInterval(stateRequestTimer);
+      const requestNow = () => {
+        if (relayReady) sendRelay({type:'requestState', clientId:localClientId});
+      };
+      requestNow();
+      stateRequestTimer = setInterval(requestNow, 1000);
+    }
+    if (data.type === 'waiting') {
+      ui.playerWaiting.classList.remove('hidden');
+      ui.playerWelcome.textContent = `Ready, ${localPlayerName}! Waiting for host to start…`;
+    }
+    if (data.type === 'feedback') {
+      ui.playerFeedback.textContent=data.message || '';
+      ui.playerFeedback.className='feedback ' + (data.correct ? 'good' : 'bad');
+      if (data.correct) {
+        ui.guessInput.disabled=true;
+        ui.submitGuess.disabled=true;
+      }
+    }
+    if (data.type === 'state') renderPlayerState(data.state);
+    if (data.type === 'reset') {
+      stopClientTimer();
+      ui.playerRound.classList.add('hidden');
+      ui.playerFinished.classList.add('hidden');
+      ui.playerWaiting.classList.remove('hidden');
+      ui.playerFeedback.textContent='';
+    }
+  }
+
+  function renderPlayerState(state) {
+    if (!state) return;
+    if (state.status === 'playing' || state.status === 'roundEnded' || state.status === 'finished') {
+      clearInterval(stateRequestTimer);
+      stateRequestTimer = null;
+    }
+    renderPlayerScores(state.scores || []);
+    if (state.status === 'finished') {
+      stopClientTimer();
+      ui.playerWaiting.classList.add('hidden');
+      ui.playerRound.classList.add('hidden');
+      ui.playerFinished.classList.remove('hidden');
+      return;
+    }
+    if (state.status === 'playing' || state.status === 'roundEnded') {
+      ui.playerWaiting.classList.add('hidden');
+      ui.playerFinished.classList.add('hidden');
+      ui.playerRound.classList.remove('hidden');
+      ui.playerRoundLabel.textContent=`Word ${state.index+1} / ${state.total}`;
+      renderTiles(ui.playerTiles,state.scramble);
+      ui.playerPattern.textContent=state.pattern || '';
+      ui.playerClue.textContent=state.clue || '';
+      ui.playerClue.classList.toggle('hidden', !state.clue);
+      ui.playerAnswerReveal.classList.toggle('hidden', state.status !== 'roundEnded');
+      ui.playerAnswer.textContent=state.answer || '';
+      if (state.status === 'roundEnded') {
+        ui.guessInput.disabled=true; ui.submitGuess.disabled=true;
+        ui.playerFeedback.textContent='Round complete — wait for the next word.';
+        ui.playerFeedback.className='feedback gold';
+        stopClientTimer();
+        ui.playerTimer.textContent='0s';
+      } else {
+        const me = (state.scores || []).find(s => s.name === localPlayerName);
+        const solved = !!(me && me.solved);
+        ui.guessInput.disabled=solved; ui.submitGuess.disabled=solved;
+        if (!solved && ui.playerFeedback.classList.contains('gold')) ui.playerFeedback.textContent='';
+        startClientTimer(state.deadline);
+        if (!solved) setTimeout(() => ui.guessInput.focus(), 60);
+      }
+    }
+  }
+
+  function renderPlayerScores(rows) {
+    if (!rows.length) {
+      ui.playerScores.innerHTML='<p class="help">Waiting for players…</p>';
+      return;
+    }
+    ui.playerScores.innerHTML='<table><thead><tr><th>#</th><th>Player</th><th>Score</th></tr></thead><tbody>' +
+      rows.map(r => `<tr><td class="rank">${r.rank}</td><td>${escapeHtml(r.name)}${r.solved ? ' ✓' : ''}</td><td class="score">${r.score}</td></tr>`).join('') +
+      '</tbody></table>';
+  }
+
+  function startClientTimer(deadline) {
+    stopClientTimer();
+    const tick=() => {
+      const left=Math.max(0,Math.ceil((Number(deadline)-Date.now())/1000));
+      ui.playerTimer.textContent=left+'s';
+    };
+    tick();
+    clientTimerHandle=setInterval(tick,250);
+  }
+
+  function stopClientTimer() {
+    if (clientTimerHandle) clearInterval(clientTimerHandle);
+    clientTimerHandle=null;
+  }
+
+  ui.guessForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!relayReady || ui.guessInput.disabled) return;
+    const guess=ui.guessInput.value.trim();
+    if (!guess) return;
+    sendRelay({type:'guess', clientId:localClientId, guess});
+    ui.guessInput.value='';
+  });
+
+
+  (function prefillRoomFromUrl() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const room = (params.get('room') || '').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,6);
+      if (room) {
+        ui.roomInput.value = room;
+        showOnly(ui.joinSetup);
+        setTimeout(() => ui.playerName.focus(), 80);
+      }
+    } catch (e) {}
+  })();
+
+  window.addEventListener('beforeunload', () => {
+    clearInterval(timerHandle);
+    stopClientTimer();
+    clearTimeout(joinTimeout);
+    clearInterval(stateRequestTimer);
+    clearInterval(joinRetryTimer);
+    relayClosedIntentionally = true;
+    try { if (relayWs && relayWs.close) relayWs.close(); } catch(e) {}
+  });
+})();
+</script>
+</body>
+</html>
