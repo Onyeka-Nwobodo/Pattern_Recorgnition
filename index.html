@@ -67,6 +67,7 @@ button{touch-action:manipulation}
 .btn.warn{background:rgba(255,209,92,.12);border-color:rgba(255,209,92,.35)}
 .btn.danger{background:rgba(255,107,138,.12);border-color:rgba(255,107,138,.35)}
 .btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+#startGame{opacity:1!important;cursor:pointer!important;pointer-events:auto!important}
 .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .field label{display:block;color:var(--muted);font-size:.88rem;margin:0 0 7px}
 .field input,.field select{
@@ -239,7 +240,7 @@ button{touch-action:manipulation}
 
           <div class="notice">You can start the game immediately. Players may join before the game starts or during a round. Multiplayer uses a direct browser-to-browser connection, so all devices need internet access.</div>
           <div class="actions">
-            <button id="startGame" class="btn primary" type="button">Start game</button>
+            <button id="startGame" class="btn primary" type="button" aria-disabled="false">Start game now</button>
           </div>
         </div>
 
@@ -326,7 +327,7 @@ button{touch-action:manipulation}
     </div>
   </section>
 
-  <div class="footer">Tip: when hosted online, students can scan the host QR code to open the game with the room code already filled in.</div>
+  <div class="footer">Tip: when hosted online, students can scan the host QR code to open the game with the room code already filled in. <span style="opacity:.65">Version 1.2</span></div>
 </div>
 
 <script>
@@ -559,6 +560,7 @@ button{touch-action:manipulation}
       renderJoinQr(roomCode);
       setNet('Room online', true);
       ui.createRoom.disabled = false;
+      forceStartEnabled();
     });
     peer.on('connection', handleIncomingConnection);
     peer.on('error', (err) => {
@@ -619,7 +621,9 @@ button{touch-action:manipulation}
     if (game) syncAll();
   }
 
-  ui.startGame.addEventListener('click', startHostGame);
+  function forceStartEnabled(){ ui.startGame.disabled=false; ui.startGame.removeAttribute('disabled'); ui.startGame.setAttribute('aria-disabled','false'); }
+  forceStartEnabled();
+  ui.startGame.addEventListener('click', () => { forceStartEnabled(); startHostGame(); });
 
   function startHostGame() {
     const count = Math.max(1, Math.min(50, Number(ui.roundCount.value) || 20));
